@@ -1,0 +1,170 @@
+/* -------------------------------------------------------------------------- *
+ *                    OpenSim:  AbstractGeometryPath.cpp                      *
+ * -------------------------------------------------------------------------- *
+ * The OpenSim API is a toolkit for musculoskeletal modeling and simulation.  *
+ * See http://opensim.stanford.edu and the NOTICE file for more information.  *
+ * OpenSim is developed at Stanford University and supported by the US        *
+ * National Institutes of Health (U54 GM072970, R24 HD065690) and by DARPA    *
+ * through the Warrior Web program.                                           *
+ *                                                                            *
+ * Copyright (c) 2005-2023 Stanford University and the Authors                *
+ * Author(s): Nicholas Bianco, Joris Verhagen, Adam Kewley                    *
+ *                                                                            *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may    *
+ * not use this file except in compliance with the License. You may obtain a  *
+ * copy of the License at http://www.apache.org/licenses/LICENSE-2.0.         *
+ *                                                                            *
+ * Unless required by applicable law or agreed to in writing, software        *
+ * distributed under the License is distributed on an "AS IS" BASIS,          *
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.   *
+ * See the License for the specific language governing permissions and        *
+ * limitations under the License.                                             *
+ * -------------------------------------------------------------------------- */
+
+#include "AbstractGeometryPath.h"
+
+#include <OpenSim/Simulation/Model/ForceApplier.h>
+#include <OpenSim/Simulation/Model/Model.h>
+
+#include <optional>
+
+using namespace OpenSim;
+
+//=============================================================================
+// CONSTRUCTOR(S) AND DESTRUCTOR
+//=============================================================================
+AbstractGeometryPath::AbstractGeometryPath() : ModelComponent() {
+    setAuthors("Nicholas Bianco, Joris Verhagen, Adam Kewley");
+
+    Appearance appearance;
+    appearance.set_color(SimTK::Gray);
+    constructProperty_Appearance(appearance);
+}
+
+AbstractGeometryPath::AbstractGeometryPath(
+        AbstractGeometryPath const&) = default;
+
+AbstractGeometryPath::~AbstractGeometryPath() noexcept = default;
+
+AbstractGeometryPath& AbstractGeometryPath::operator=(
+        const AbstractGeometryPath&) = default;
+
+AbstractGeometryPath::AbstractGeometryPath(
+        AbstractGeometryPath&& other) = default;
+
+AbstractGeometryPath& AbstractGeometryPath::operator=(
+        AbstractGeometryPath&& other) = default;
+
+void AbstractGeometryPath::addInEquivalentForces(const SimTK::State& state,
+    const double& tension,
+    SimTK::Vector_<SimTK::SpatialVec>& bodyForces,
+    SimTK::Vector& mobilityForces) const
+{
+    ForceApplier forceApplier{&getModel().getMatterSubsystem(), &bodyForces, &mobilityForces};
+    produceForces(state, tension, forceApplier);
+}
+
+//=============================================================================
+// DEFAULTED METHODS
+//=============================================================================
+const SimTK::Vec3& AbstractGeometryPath::getDefaultColor() const
+{
+    return get_Appearance().get_color();
+}
+
+void AbstractGeometryPath::setDefaultColor(const SimTK::Vec3& color)
+{
+    updProperty_Appearance().setValueIsDefault(false);
+    upd_Appearance().set_color(color);
+}
+
+SimTK::Vec3 AbstractGeometryPath::getColor(const SimTK::State& s) const
+{
+    return getDefaultColor();
+}
+
+double AbstractGeometryPath::getPreScaleLength(const SimTK::State&) const
+{
+    return _preScaleLength;
+}
+
+void AbstractGeometryPath::setPreScaleLength(const SimTK::State&,
+        double preScaleLength)
+{
+    _preScaleLength = preScaleLength;
+}
+
+void AbstractGeometryPath::forEachDecorativePathPoint(
+    const SimTK::State& state,
+    const ModelDisplayHints& modelDisplayHints,
+    const std::function<void(const DecorativePathPoint&)>& callback) const
+{
+    implForEachDecorativePathPoint(state, modelDisplayHints, callback);
+}
+
+std::vector<AbstractGeometryPath::DecorativePathPoint>
+AbstractGeometryPath::getDecorativePathPoints(
+    const SimTK::State& state,
+    const ModelDisplayHints& modelDisplayHints) const
+{
+    std::vector<AbstractGeometryPath::DecorativePathPoint> rv;
+    forEachDecorativePathPoint(
+        state,
+        modelDisplayHints,
+        [&rv](const DecorativePathPoint& dp) { rv.push_back(dp); }
+    );
+    return rv;
+}
+
+void AbstractGeometryPath::generateDecorations(
+    bool fixed,
+    const ModelDisplayHints& hints,
+    const SimTK::State& s,
+    SimTK::Array_<SimTK::DecorativeGeometry>& geoms) const
+{
+    if (fixed) {
+        return;
+    }
+    if (not get_Appearance().get_visible()) {
+        // Don't render a path that's hidden
+        // (ComputationalBiomechanicsLab/opensim-creator#1166)
+        return;
+    }
+
+    const bool showPathPoints = hints.get_show_path_points();
+    const SimTK::Vec3 color = getColor(s);
+    const double opacity = get_Appearance().get_opacity();
+    const auto representation = get_Appearance().get_representation();
+
+    int index = 0;
+    std::optional<DecorativePathPoint> previous;
+    forEachDecorativePathPoint(s, hints, [&](const DecorativePathPoint& dpp)
+    {
+        if (showPathPoints) {
+            geoms.push_back(SimTK::DecorativeSphere(0.005)
+                .setTransform(dpp.getLocationInGround())
+                .setColor(color)
+                .setOpacity(opacity)
+                .setRepresentation(representation)
+                .setBodyId(0)
+                .setIndexOnBody(index++)
+            );
+        }
+
+        if (previous) {
+            // Emit line between points
+            const SimTK::Vec3& p1 = previous->getLocationInGround();
+            const SimTK::Vec3& p2 = dpp.getLocationInGround();
+            geoms.push_back(SimTK::DecorativeLine(p1, p2)
+                .setLineThickness(4)
+                .setColor(color)
+                .setOpacity(opacity)
+                .setRepresentation(representation)
+                .setBodyId(0)
+                .setIndexOnBody(index++)
+            );
+        }
+
+        previous = dpp;
+    });
+}

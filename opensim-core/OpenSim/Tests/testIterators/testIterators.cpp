@@ -1,0 +1,591 @@
+/* -------------------------------------------------------------------------- *
+ *                       OpenSim:  testIterators.cpp                        *
+ * -------------------------------------------------------------------------- *
+ * The OpenSim API is a toolkit for musculoskeletal modeling and simulation.  *
+ * See http://opensim.stanford.edu and the NOTICE file for more information.  *
+ * OpenSim is developed at Stanford University and supported by the US        *
+ * National Institutes of Health (U54 GM072970, R24 HD065690) and by DARPA    *
+ * through the Warrior Web program.                                           *
+ *                                                                            *
+ * Copyright (c) 2005-2017 Stanford University and the Authors                *
+ * Author(s): Ayman Habib                                                     *
+ *                                                                            *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may    *
+ * not use this file except in compliance with the License. You may obtain a  *
+ * copy of the License at http://www.apache.org/licenses/LICENSE-2.0.         *
+ *                                                                            *
+ * Unless required by applicable law or agreed to in writing, software        *
+ * distributed under the License is distributed on an "AS IS" BASIS,          *
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.   *
+ * See the License for the specific language governing permissions and        *
+ * limitations under the License.                                             *
+ * -------------------------------------------------------------------------- */
+
+#include <OpenSim/Actuators/PointActuator.h>
+#include <OpenSim/Simulation/Model/Model.h>
+#include "OpenSim/Simulation/SimbodyEngine/PinJoint.h"
+
+#include <tests/Testing.h>
+
+#include <catch2/catch_all.hpp>
+
+#include <iterator>
+#include <iostream>
+#include <type_traits>
+
+using namespace OpenSim;
+using namespace std;
+
+namespace {
+
+static_assert(std::is_copy_constructible<ComponentListIterator<Component>>::value, "required by standard library's LegacyInputIterator");
+static_assert(std::is_copy_assignable<ComponentListIterator<Component>>::value, "required by standard library's LegacyInputIterator");
+static_assert(std::is_destructible<ComponentListIterator<Component>>::value, "required by standard library's LegacyInputIterator");
+static_assert(std::is_same<std::iterator_traits<ComponentListIterator<Component>>::value_type, Component>::value, "required by standard library's LegacyInputIterator");
+static_assert(std::is_swappable<ComponentListIterator<Component>>::value);
+
+// Example filter that allows for iterating only through Components that have
+// state variables, used for demonstration purposes.
+class ComponentWithStateVariables : public ComponentFilter {
+public:
+    ComponentWithStateVariables() {
+        //std::cout << "ComponentWithStateVariables constructed" << std::endl;
+    };
+    bool isMatch(const Component& comp) const override {
+        return (comp.getNumStateVariables()>0);
+    };
+    ~ComponentWithStateVariables() {
+        //std::cout << "ComponentWithStateVariables destructed" << std::endl;
+    }
+    ComponentWithStateVariables* clone() const override {
+        return new ComponentWithStateVariables(*this);
+    }
+};
+
+const std::string modelFilename = "arm26.osim";
+// TODO: Hard-coding these numbers is not ideal. As we introduce more components
+// to recompose existing components, this will need continual updating. For example,
+// Joint's often add PhysicalOffsetFrames to handle what used to be baked in location
+// and orientation offsets.
+// 2018-09-05
+//     Updates to accommodate ModelComponentSets: BodySet, JointSet, ConstraintSet,
+//     ForceSet, ProbeSet, WrapObjectSet, ...
+// 2022-03-16
+//     Subtracted 14 from the count because PathWrapPoint no longer inherits from
+//     PathPoint (which internally creates a Station subcomponent)
+const int expectedNumComponents = 186;
+const int expectedNumJointsWithStateVariables = 2;
+// 2018-08-22 added 2 for JointSet and ForceSet that contain Components with states
+const int expectedNumModelComponentsWithStateVariables = 12;
+// Below updated from 1 to 7 to account for offset frame and its geometry and
+// wrapobjectset that are now part of the Joint
+const int expectedNumJntComponents = 7;
+// Test using the iterator to skip over every other Component (Frame in this case)
+// nf = 1 ground + 2 bodies + 4 joint offsets = 7, skipping - 3 = 4
+const int expectedNumCountSkipFrames = 4;
+
+class Device : public ModelComponent {
+    OpenSim_DECLARE_CONCRETE_OBJECT(Device, ModelComponent);
+};
+
+}
+
+TEST_CASE("testNestedComponentListConsistency") {
+
+    // The following model(s) contains Actuators that are registered when the
+    // osimActuators library is loaded. But unless we call at least one
+    // function defined in the osimActuators library, some linkers will omit
+    // its dependency from the executable and it will not be loaded at
+    // startup.
+    { PointActuator t; }
+
+    using SimTK::Vec3;
+    using SimTK::Inertia;
+
+    Model model(modelFilename);
+
+    auto device = new Device();
+    device->setName("device");
+
+    auto humerus = new Body("device_humerus", 1, Vec3(0), Inertia(0));
+    auto radius  = new Body("device_radius",  1, Vec3(0), Inertia(0));
+
+    auto shoulder = new PinJoint("device_shoulder",
+                                          model.getGround(), Vec3(0), Vec3(0),
+                                          *humerus, Vec3(0, 1, 0), Vec3(0));
+    auto elbow = new PinJoint("device_elbow",
+                                       *humerus, Vec3(0), Vec3(0),
+                                       *radius, Vec3(0, 1, 0), Vec3(0));
+
+    device->addComponent(shoulder);
+    device->addComponent(elbow);
+
+    model.addModelComponent(device);
+
+    std::vector<const Joint*> joints1{}, joints2{};
+    std::set<const Coordinate*> coords{};
+
+    std::cout << "Joints in the model: " << std::endl;
+    for(const auto& joint : model.getComponentList<Joint>()) {
+        std::cout << "    " << joint.getAbsolutePathString() << std::endl;
+        joints1.push_back(&joint);
+    }
+
+    std::cout << "Joints and Coordinates: " << std::endl;
+    for(const auto& joint : model.getComponentList<Joint>()) {
+        joints2.push_back(&joint);
+        std::cout << "    Joint: " << joint.getAbsolutePathString() << std::endl;
+        for(const auto& coord : joint.getComponentList<Coordinate>()) {
+            std::cout << "        Coord: "
+                      << coord.getAbsolutePathString() << std::endl;
+            coords.insert(&coord);
+        }
+    }
+
+    // Joints list should be a unique set.
+    OPENSIM_ASSERT_ALWAYS(
+            (std::set<const Joint*>{joints1.begin(), joints1.end()}.size()
+                    == 4));
+    // Joints1 and Joints2 must be identical.
+    OPENSIM_ASSERT_ALWAYS(joints1 == joints2);
+    // Expected number of unique coordinates.
+    OPENSIM_ASSERT_ALWAYS(coords.size() == 4);
+}
+
+TEST_CASE("testComponentListConst") {
+
+    // The following model(s) contains Actuators that are registered when the
+    // osimActuators library is loaded. But unless we call at least one
+    // function defined in the osimActuators library, some linkers will omit
+    // its dependency from the executable and it will not be loaded at
+    // startup.
+    { PointActuator t; }
+
+    Model model(modelFilename);
+    model.printSubcomponentInfo();
+
+    ComponentList<const Component> componentsList = model.getComponentList();
+    cout << "list begin: " << componentsList.begin()->getName() << endl;
+    int numComponents = 0;
+    for (ComponentList<const Component>::const_iterator
+            it = componentsList.begin(); it != componentsList.end();  ++it) {
+        cout << "Iterator is at: " << it->getAbsolutePathString() <<
+            " <" << it->getConcreteClassName() << ">" << endl;
+        numComponents++;
+        // it->setName("this line should not compile; using const_iterator.");
+    }
+
+    ComponentList<const Body> bodiesList = model.getComponentList<Body>();
+
+    int numBodies = 0;
+    cout << "Bodies list begin: " << bodiesList.begin()->getName() << endl;
+    for (ComponentList<Body>::const_iterator
+            it = bodiesList.begin(); it != bodiesList.end(); ++it) {
+        cout << "Iterator is at Body: " << it->getName() << endl;
+        numBodies++;
+    }
+    // Now we try the post increment variant of the iterator
+    cout << "Bodies list begin, using post increment: "
+        << bodiesList.begin()->getName() << endl;
+    int numBodiesPost = 0;
+    for (ComponentList<Body>::const_iterator
+            itPost = bodiesList.begin(); itPost != bodiesList.end(); itPost++) {
+        cout << "Iterator is at Body: " << itPost->getName() << endl;
+        numBodiesPost++;
+    }
+
+    int numMuscles = 0;
+    cout << "Using range-for loop over Muscles: " << endl;
+    ComponentList<const Muscle> musclesList = model.getComponentList<Muscle>();
+    for (const Muscle& muscle : musclesList) {
+        cout << "Iterator is at muscle: " << muscle.getName() << endl;
+        numMuscles++;
+    }
+
+    int numGeomPaths = 0;
+    ComponentList<const GeometryPath> geomPathList =
+        model.getComponentList<GeometryPath>();
+    for (const GeometryPath& gpath : geomPathList) {
+        (void)gpath; // Suppress unused variable warning.
+        numGeomPaths++;
+    }
+    const Joint& shoulderJnt = model.getJointSet().get(0);
+    // cycle through components under shoulderJnt should return the Joint
+    // and the Coordinate
+    int numJntComponents = 0;
+    ComponentList<const Component> jComponentsList =
+        shoulderJnt.getComponentList();
+    cout << "Components/subComponents under Shoulder Joint:" << endl;
+    for (ComponentList<Component>::const_iterator
+            it = jComponentsList.begin(); it != jComponentsList.end(); ++it) {
+        cout << "Iterator is at: " << it->getConcreteClassName() << " "
+            << it->getAbsolutePathString() << endl;
+        numJntComponents++;
+    }
+    cout << "Num all components = " << numComponents << endl;
+    cout << "Num bodies = " << numBodies << endl;
+    cout << "Num Muscles = " << numMuscles << endl;
+    cout << "Num GeometryPath components = " << numGeomPaths << endl;
+    // Components = Model + 3Body + 3Marker + 2(Joint+Coordinate)
+    //              + 6(Muscle+GeometryPath)
+
+    // To test states we must have added the components to the system
+    // which is done when the model creates and initializes the system
+    SimTK::State state = model.initSystem();
+
+    unsigned numJoints{}, numCoords{};
+    for(const auto& joint : model.getComponentList<Joint>()) {
+        cout << "Joint: " << joint.getAbsolutePathString() << endl;
+        ++numJoints;
+        for(const auto& coord : joint.getComponentList<Coordinate>()) {
+            cout << "Coord: " << coord.getAbsolutePathString() << endl;
+            ++numCoords;
+        }
+    }
+    OPENSIM_ASSERT_ALWAYS(numJoints == 2);
+    OPENSIM_ASSERT_ALWAYS(numCoords == 2);
+
+    int numJointsWithStateVariables = 0;
+    ComponentList<const Joint> jointsWithStates =
+        model.getComponentList<Joint>();
+    ComponentWithStateVariables myFilter;
+    jointsWithStates.setFilter(myFilter);
+    for (const Joint& comp : jointsWithStates) {
+        cout << comp.getConcreteClassName() << ":"
+            << comp.getAbsolutePathString() << endl;
+        numJointsWithStateVariables++;
+    }
+
+    int numModelComponentsWithStateVariables = 0;
+    ComponentList<const ModelComponent> comps =
+        model.getComponentList<ModelComponent>();
+    comps.setFilter(myFilter);
+    for (const ModelComponent& comp : comps) {
+        cout << comp.getConcreteClassName() << ":"
+            << comp.getAbsolutePathString() << endl;
+        numModelComponentsWithStateVariables++;
+    }
+
+    cout << "numModelComponentsWithStateVariables ="
+        << numModelComponentsWithStateVariables << endl;
+
+    // ensure the iterator is compatible with stdlib iterator methods (e.g. `std::advance`)
+    ComponentList<const Frame> allFrames = model.getComponentList<Frame>();
+    ComponentList<Frame>::const_iterator skipIter = allFrames.begin();
+    int countSkipFrames = 0;
+    while (skipIter != allFrames.end()){
+        cout << skipIter->getConcreteClassName() << ":"
+            << skipIter->getAbsolutePathString() << endl;
+        std::advance(skipIter, 2);
+        countSkipFrames++;
+    }
+
+    OPENSIM_ASSERT_ALWAYS(numComponents == expectedNumComponents &&
+            "Number of Components mismatch");
+    OPENSIM_ASSERT_ALWAYS(numBodies == model.getNumBodies() &&
+            "Number of Bodies mismatch");
+    OPENSIM_ASSERT_ALWAYS(numBodiesPost == numBodies &&
+            "Number of Bodies post mismatch");
+    OPENSIM_ASSERT_ALWAYS(numMuscles == model.getMuscles().getSize() &&
+            "Number of Muscles mismatch");
+    OPENSIM_ASSERT_ALWAYS(
+            numJointsWithStateVariables ==
+                            expectedNumJointsWithStateVariables &&
+            "Number of Joints with StateVariables mismatch");
+    OPENSIM_ASSERT_ALWAYS(numModelComponentsWithStateVariables ==
+           expectedNumModelComponentsWithStateVariables &&
+            "Number of Components with StateVariables mismatch");
+    OPENSIM_ASSERT_ALWAYS(numJntComponents == expectedNumJntComponents &&
+            "Number of Components within Joints mismatch");
+    OPENSIM_ASSERT_ALWAYS(countSkipFrames == expectedNumCountSkipFrames &&
+            "Number of Frames skipping every other one, mismatch");
+}
+
+// This test repeats the same tests as testComponentListConst(), but using
+// updComponentList() instead, and focusing on using const iterators.
+// That is, one still cannot
+// modify the components, even though we are using updComponentList(). It's
+// important that, even if you have a ComponentList() that does not allow
+// modifying the components, it still can provide const access to the
+// components.
+TEST_CASE("testComponentListNonConstWithConstIterator") {
+
+    // The following model(s) contains Actuators that are registered when the
+    // osimActuators library is loaded. But unless we call at least one
+    // function defined in the osimActuators library, some linkers will omit
+    // its dependency from the executable and it will not be loaded at
+    // startup.
+    { PointActuator t; }
+
+    Model model(modelFilename);
+
+    // Making this a const ComponentList causes us to use the const
+    // begin()/end() methods, which return const_iterators, and thus avoids
+    // the need for implicit conversion of non-const iterator to const_iterator.
+    const ComponentList<Component> componentsList = model.updComponentList();
+    std::cout << "list begin: " << componentsList.begin()->getName() << std::endl;
+    int numComponents = 0;
+    for (ComponentList<Component>::const_iterator it = componentsList.begin();
+            it != componentsList.end();
+            ++it) {
+        std::cout << "Iterator is at: " << it->getAbsolutePathString() << " <" << it->getConcreteClassName() << ">" << std::endl;
+        numComponents++;
+        // it->setName("this line should not compile; using const_iterator.");
+    }
+
+    ComponentList<Body> bodiesList = model.updComponentList<Body>();
+    int numBodies = 0;
+    // Test the cbegin()/cend() variants, which avoid the implicit conversion
+    // from iterator to const_iterator.
+    for (ComponentList<Body>::const_iterator it = bodiesList.cbegin();
+            it != bodiesList.cend();
+            ++it) {
+        std::cout << "Iterator is at Body: " << it->getName() << std::endl;
+        numBodies++;
+    }
+    // Now we try the post increment variant of the iterator
+    std::cout << "Bodies list begin, using post increment: "
+              << bodiesList.begin()->getName() << std::endl;
+    int numBodiesPost = 0;
+    for (ComponentList<Body>::const_iterator itPost = bodiesList.begin();
+            itPost != bodiesList.end();
+            itPost++) {
+        std::cout << "Iterator is at Body: " << itPost->getName() << std::endl;
+        numBodiesPost++;
+    }
+
+    int numMuscles = 0;
+    std::cout << "Using range-for loop over Muscles: " << std::endl;
+    // Make the ComponentList const to force the range for loop to use the
+    // const iterator.
+    const ComponentList<Muscle> musclesList = model.updComponentList<Muscle>();
+    for (const Muscle& muscle : musclesList) {
+        std::cout << "Iterator is at muscle: " << muscle.getName() << std::endl;
+        numMuscles++;
+    }
+
+    int numGeomPaths = 0;
+    // Make the ComponentList const to force the range for loop to use the
+    // const iterator.
+    const ComponentList<GeometryPath> geomPathList = model.updComponentList<GeometryPath>();
+    for (const GeometryPath& gpath : geomPathList) {
+        (void)gpath; // Suppress unused variable warning.
+        numGeomPaths++;
+    }
+    Joint& shoulderJnt = model.getJointSet().get(0);
+    // cycle through components under shoulderJnt should return the Joint
+    // itself and the Coordinate
+    int numJntComponents = 0;
+    // This test relies on the implicit conversion from iterator to
+    // const_iterator.
+    ComponentList<Component> jComponentsList = shoulderJnt.updComponentList();
+    std::cout << "Components/subComponents under Shoulder Joint:" << std::endl;
+    for (ComponentList<Component>::const_iterator it = jComponentsList.begin();
+        it != jComponentsList.end();
+        ++it) {
+        std::cout << "Iterator is at: " << it->getConcreteClassName() << " " << it->getAbsolutePathString() << std::endl;
+        numJntComponents++;
+    }
+    cout << "Num all components = " << numComponents << std::endl;
+    cout << "Num bodies = " << numBodies << std::endl;
+    cout << "Num Muscles = " << numMuscles << std::endl;
+    cout << "Num GeometryPath components = " << numGeomPaths << std::endl;
+
+    // To test states we must have added the components to the system
+    // which is done when the model creates and initializes the system
+    SimTK::State state = model.initSystem();
+
+    int numJointsWithStateVariables = 0;
+    ComponentList<Joint> jointsWithStates = model.updComponentList<Joint>();
+    ComponentWithStateVariables myFilter;
+    jointsWithStates.setFilter(myFilter);
+    for (const Joint& comp : jointsWithStates) {
+        cout << comp.getConcreteClassName() << ":" << comp.getAbsolutePathString() << endl;
+        numJointsWithStateVariables++;
+    }
+    int numModelComponentsWithStateVariables = 0;
+    ComponentList<ModelComponent> comps = model.updComponentList<ModelComponent>();
+    comps.setFilter(myFilter);
+    for (const ModelComponent& comp : comps) {
+        cout << comp.getConcreteClassName() << ":" << comp.getAbsolutePathString() << endl;
+        numModelComponentsWithStateVariables++;
+    }
+    // ensure the iterator is compatible with stdlib iterator methods (e.g. `std::advance`)
+    ComponentList<Frame> allFrames = model.updComponentList<Frame>();
+    // This line uses implicit conversion from iterator to const_iterator.
+    ComponentList<Frame>::const_iterator skipIter = allFrames.begin();
+    int countSkipFrames = 0;
+    while (skipIter != allFrames.end()){
+        cout << skipIter->getConcreteClassName() << ":" << skipIter->getAbsolutePathString() << endl;
+        std::advance(skipIter, 2);
+        countSkipFrames++;
+    }
+
+    OPENSIM_ASSERT_ALWAYS(numComponents == expectedNumComponents);
+    OPENSIM_ASSERT_ALWAYS(numBodies == model.getNumBodies());
+    OPENSIM_ASSERT_ALWAYS(numBodiesPost == numBodies);
+    OPENSIM_ASSERT_ALWAYS(numMuscles == model.getMuscles().getSize());
+    OPENSIM_ASSERT_ALWAYS(
+            numJointsWithStateVariables == expectedNumJointsWithStateVariables);
+    OPENSIM_ASSERT_ALWAYS(numModelComponentsWithStateVariables ==
+           expectedNumModelComponentsWithStateVariables);
+    OPENSIM_ASSERT_ALWAYS(numJntComponents == expectedNumJntComponents);
+    OPENSIM_ASSERT_ALWAYS(countSkipFrames == expectedNumCountSkipFrames);
+
+
+    // It is not possible to convert const_iterator to (non-const) iterator.
+    {
+        // Lines are commented out b/c they don't compile. I (Chris) uncommented
+        // them during development of the non-const iterators to check that
+        // these lines do not compile.
+        ComponentList<Body> mutBodyList = model.updComponentList<Body>();
+        // ComponentList<Body>::iterator itBody = mutBodyList.cbegin();
+        // Also does not work with an abstract type.
+        ComponentList<Component> mutCompList = model.updComponentList<Component>();
+        // ComponentList<Component>::iterator itComp = mutCompList.cbegin();
+    }
+
+}
+
+// Similar to testComponentListNonConstWithNonConstIterator, except that we
+// allow modifying the elements of the list.
+TEST_CASE("testComponentListNonConstWithNonConstIterator") {
+
+    // The following model(s) contains Actuators that are registered when the
+    // osimActuators library is loaded. But unless we call at least one
+    // function defined in the osimActuators library, some linkers will omit
+    // its dependency from the executable and it will not be loaded at
+    // startup.
+    { PointActuator t; }
+
+    Model model(modelFilename);
+
+    ComponentList<Component> componentsList = model.updComponentList();
+    int numComponents = 0;
+    for (ComponentList<Component>::iterator it = componentsList.begin();
+            it != componentsList.end();
+            ++it) {
+        numComponents++;
+        it->setName(it->getName());
+    }
+
+    ComponentList<Body> bodiesList = model.updComponentList<Body>();
+    int numBodies = 0;
+    for (ComponentList<Body>::iterator it = bodiesList.begin();
+            it != bodiesList.end();
+            ++it) {
+        numBodies++;
+        it->setName(it->getName());
+    }
+    // Now we try the post increment variant of the iterator
+    int numBodiesPost = 0;
+    for (ComponentList<Body>::iterator itPost = bodiesList.begin();
+            itPost != bodiesList.end();
+            itPost++) {
+        numBodiesPost++;
+        itPost->setName(itPost->getName());
+    }
+
+    int numMuscles = 0;
+    ComponentList<Muscle> musclesList = model.updComponentList<Muscle>();
+    for (Muscle& muscle : musclesList) {
+        numMuscles++;
+        muscle.setName(muscle.getName());
+    }
+
+    int numGeomPaths = 0;
+    ComponentList<GeometryPath> geomPathList = model.updComponentList<GeometryPath>();
+    for (GeometryPath& gpath : geomPathList) {
+        (void)gpath; // Suppress unused variable warning.
+        numGeomPaths++;
+        gpath.setName(gpath.getName());
+    }
+    Joint& shoulderJnt = model.getJointSet().get(0);
+    // cycle through components under shoulderJnt should return the Joint
+    // itself and the Coordinate
+    int numJntComponents = 0;
+    ComponentList<Component> jComponentsList = shoulderJnt.updComponentList();
+    for (ComponentList<Component>::iterator it = jComponentsList.begin();
+            it != jComponentsList.end();
+            ++it) {
+        numJntComponents++;
+        it->setName(it->getName());
+    }
+    cout << "Num all components = " << numComponents << std::endl;
+    cout << "Num bodies = " << numBodies << std::endl;
+    cout << "Num Muscles = " << numMuscles << std::endl;
+    cout << "Num GeometryPath components = " << numGeomPaths << std::endl;
+
+    // To test states we must have added the components to the system
+    // which is done when the model creates and initializes the system
+    SimTK::State state = model.initSystem();
+
+    int numJointsWithStateVariables = 0;
+    ComponentList<Joint> jointsWithStates = model.updComponentList<Joint>();
+    ComponentWithStateVariables myFilter;
+    jointsWithStates.setFilter(myFilter);
+    for (Joint& comp : jointsWithStates) {
+        numJointsWithStateVariables++;
+        comp.setName(comp.getName());
+    }
+    int numModelComponentsWithStateVariables = 0;
+    ComponentList<ModelComponent> comps = model.updComponentList<ModelComponent>();
+    comps.setFilter(myFilter);
+    for (ModelComponent& comp : comps) {
+        numModelComponentsWithStateVariables++;
+        comp.setName(comp.getName());
+    }
+    // ensure the iterator is compatible with stdlib iterator methods (e.g. `std::advance`)
+    ComponentList<Frame> allFrames = model.updComponentList<Frame>();
+    ComponentList<Frame>::iterator skipIter = allFrames.begin();
+    int countSkipFrames = 0;
+    while (skipIter != allFrames.end()){
+        skipIter->setName(skipIter->getName());
+        std::advance(skipIter, 2);
+        countSkipFrames++;
+    }
+
+    OPENSIM_ASSERT_ALWAYS(numComponents == expectedNumComponents);
+    OPENSIM_ASSERT_ALWAYS(numBodies == model.getNumBodies());
+    OPENSIM_ASSERT_ALWAYS(numBodiesPost == numBodies);
+    OPENSIM_ASSERT_ALWAYS(numMuscles == model.getMuscles().getSize());
+    OPENSIM_ASSERT_ALWAYS(
+            numJointsWithStateVariables == expectedNumJointsWithStateVariables);
+
+    cout << "numModelComponentsWithStateVariables ="
+        << numModelComponentsWithStateVariables << endl;
+
+    OPENSIM_ASSERT_ALWAYS(numModelComponentsWithStateVariables ==
+           expectedNumModelComponentsWithStateVariables);
+    OPENSIM_ASSERT_ALWAYS(numJntComponents == expectedNumJntComponents);
+    OPENSIM_ASSERT_ALWAYS(countSkipFrames == expectedNumCountSkipFrames);
+}
+
+// Ensure that we can compare const_iterator and (non-const) iterator.
+TEST_CASE("testComponentListComparisonOperators") {
+
+    // The following model(s) contains Actuators that are registered when the
+    // osimActuators library is loaded. But unless we call at least one
+    // function defined in the osimActuators library, some linkers will omit
+    // its dependency from the executable and it will not be loaded at
+    // startup.
+    { PointActuator t; }
+
+    Model model(modelFilename);
+
+    ComponentList<Body> list = model.updComponentList<Body>();
+    ComponentList<Body>::const_iterator constIt = list.cbegin();
+    ComponentList<Body>::iterator mutIt = list.begin();
+    SimTK_TEST(constIt == mutIt);
+    // It's important to switch the operands, since operator==() is invoked
+    // on the first operand, and we want to ensure both iterators can be
+    // used as the first operand.
+    SimTK_TEST(mutIt == constIt);
+    SimTK_TEST(constIt.equals(mutIt));
+    // No support for mutIt.equals(constIt); (no implicit conversion from
+    // const to non-const iterator.
+
+    ++mutIt;
+    SimTK_TEST(constIt != mutIt);
+    SimTK_TEST(mutIt != constIt);
+}

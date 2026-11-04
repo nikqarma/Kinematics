@@ -1,0 +1,58 @@
+# Sources: downloaded source code
+dependencies/*
+!dependencies/CMakeLists.txt
+!dependencies/CMakePresets.json
+!dependencies/*.cmake
+!dependencies/*.patch
+
+# Build directory
+/build*
+
+# Testing: `tmp` is sometimes used to write debug information.
+tmp
+
+# Installation: some configurations install OpenSim in the source directory
+install
+
+# Runtime: some configurations cause OpenSim to write these log files
+err.log
+out.log
+
+# Runtime: OpenSim Moco
+delete_this_to_stop_optimization*.txt
+
+# python
+*.pyc
+venv
+
+# macOS
+.DS_Store
+
+# Matlab
+*.asv
+
+# editor: CLion/PyCharm
+.idea
+
+# editor: QtCreator
+*.autosave
+CMakeLists.txt.user
+
+# editor: emacs/vim
+*~
+*.swp
+*.swo
+
+# When using clangd-based LSPs
+.cache/
+
+# editor: Visual Studio
+.vs/
+out/
+CMakeSettings.json
+
+# editor: Visual Studio Code
+.vscode/
+
+# CMake user presets
+CMakeUserPresets.json

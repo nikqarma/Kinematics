@@ -1,0 +1,76 @@
+#!/usr/bin/env python
+
+import os
+import sys
+from setuptools import setup
+from setuptools.dist import Distribution
+from pathlib import Path
+
+# This provides a list of relative paths to all the dependencies in the bin folder.
+# Only when installed locally via "python -m pip install ." in Windows
+bin_path = '../../bin'
+bin_files = []
+if os.path.isfile(os.path.join(bin_path, 'opensim-cmd.exe')):
+    for file in os.listdir(bin_path):
+        bin_files.append(os.path.join(bin_path, file).replace(os.sep,'/'))
+
+# A list of relative paths to the geometry files in the /Geometry folder
+geometry_path = '../../Geometry'
+geometry_files = []
+if os.path.exists(geometry_path):
+    for file in os.listdir(geometry_path):
+        geometry_files.append(os.path.join(geometry_path, file).replace(os.sep,'/'))
+
+this_dir = Path(__file__).parent
+long_description = (this_dir / "opensim/README.md").read_text(encoding="utf-8")
+
+# This provides the variable `__version__`.
+if sys.version_info[0] < 3:
+    execfile('opensim/version.py')
+else:
+    exec(compile(open('opensim/version.py').read(), 'opensim/version.py', 'exec'))
+class BinaryDistribution(Distribution):
+    """Distribution which always forces a binary package with platform name"""
+    def has_ext_modules(foo):
+        return True
+
+setup(name='opensim',
+      version=__version__,
+      # The build number is used to differentiate between different builds of the same 
+      # version. Typically on testpypi. py_limited_api is used to specify the Python version 
+      # compatibility for the wheel. If upgrading the Python 3.11, change this to cp311 for example.
+      options={"bdist_wheel": {"build_number": "1", 
+                               "py_limited_api": "cp310"}},
+      description='OpenSim Simulation Framework',
+      long_description=long_description,
+      long_description_content_type='text/markdown',
+      author='OpenSim Team',
+      author_email='ahabib@stanford.edu',
+      url='http://opensim.stanford.edu/',
+      license='Apache 2.0',
+      packages=['opensim'],
+      # The last 3 entries are for if OPENSIM_PYTHON_STANDALONE is ON.
+      # The asterisk after the extension is to handle version numbers on Linux.
+      package_data={'opensim': ['_*.*', '*.dylib', '*.dll', '*.so*', 'simbody-*',
+                    'simbody-*.*/*/*/*', 'Geometry/*.*']},
+      # Create a command-line tool for generating a report.
+      entry_points={
+          'console_scripts': [
+              'opensim-moco-generate-report = opensim.report:main',
+          ],
+      },
+      include_package_data=True,
+      classifiers=[
+          'Intended Audience :: Science/Research',
+          'Operating System :: OS Independent',
+          'Programming Language :: Python :: 3',
+          'Topic :: Scientific/Engineering :: Physics',
+          ],
+          install_requires=[
+              "numpy>=2.1"
+          ],
+          distclass=BinaryDistribution
+      )
+
+# To build the wheel, run the following command:
+# python setup.py bdist_wheel

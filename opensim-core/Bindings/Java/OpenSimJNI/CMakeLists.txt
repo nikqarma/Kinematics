@@ -1,0 +1,143 @@
+set(KIT JavaJNI)
+set(UKIT JAVAJNI)
+
+# For building C++ wrapper.
+find_package(JNI 1.8 REQUIRED)
+
+# Avoid excessive compiler warnings. We set these COMPILE_OPTIONS in the root
+# CMakeLists.txt.
+set_directory_properties(PROPERTIES COMPILE_OPTIONS "")
+
+function(OpenSimGenerateJavaWrapper
+        NAME INPUT_INTERFACE_FILE OUTPUT_CXX_FILE OUTPUT_H_FILE)
+
+    set(_swig_common_args -c++ -java ${SWIG_DOXYGEN_STRING}
+            -package ${OPENSIM_JAVA_WRAPPING_PACKAGE}
+            -I${OpenSim_SOURCE_DIR}
+            -I${OpenSim_SOURCE_DIR}/Bindings
+            -I${Simbody_INCLUDE_DIR}
+            ${SWIG_FLAGS}
+            ${INPUT_INTERFACE_FILE}
+            )
+
+    OpenSimFindSwigFileDependencies(_${NAME}_dependencies "${NAME} (Java)"
+        "${_swig_common_args}"
+        )
+
+    # This directory will hold the SWIG-generated .java files, but SWIG won't
+    # create this directory for us.
+    execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory
+        ${CMAKE_CURRENT_BINARY_DIR}/src/${NAME})
+    add_custom_command(
+        # This target actually creates a lot more (all the produced .java files)
+        # but we will just use these two files as a proxy for all of those.
+        OUTPUT ${OUTPUT_CXX_FILE} ${OUTPUT_H_FILE}
+        # To avoid compiling stale .java files, delete any existing .java files.
+        COMMAND ${CMAKE_COMMAND} -E remove ${CMAKE_CURRENT_BINARY_DIR}/src/${NAME}/*
+        COMMAND ${SWIG_EXECUTABLE}
+            -v # verbose
+            -o ${OUTPUT_CXX_FILE}
+            -outdir ${CMAKE_CURRENT_BINARY_DIR}/src/${NAME}
+            ${_swig_common_args}
+        DEPENDS ${_${NAME}_dependencies}
+        COMMENT "Generating Java bindings source code with SWIG: ${NAME}")
+endfunction()
+
+OpenSimGenerateJavaWrapper(simbody
+    ${SWIG_JAVA_SIMBODY_INTERFACE_FILE}
+    ${SWIG_JAVA_SIMBODY_CXX_FILE}
+    ${SWIG_JAVA_SIMBODY_H_FILE})
+
+OpenSimGenerateJavaWrapper(common
+    ${SWIG_JAVA_COMMON_INTERFACE_FILE}
+    ${SWIG_JAVA_COMMON_CXX_FILE}
+    ${SWIG_JAVA_COMMON_H_FILE})
+
+OpenSimGenerateJavaWrapper(simulation
+    ${SWIG_JAVA_SIMULATION_INTERFACE_FILE}
+    ${SWIG_JAVA_SIMULATION_CXX_FILE}
+    ${SWIG_JAVA_SIMULATION_H_FILE})
+
+OpenSimGenerateJavaWrapper(actuators-analysis-tools
+    ${SWIG_JAVA_ACTUATORS_INTERFACE_FILE}
+    ${SWIG_JAVA_ACTUATORS_CXX_FILE}
+    ${SWIG_JAVA_ACTUATORS_H_FILE})
+
+OpenSimGenerateJavaWrapper(examplecomponents
+    ${SWIG_JAVA_EXAMPLECOMPONENTS_INTERFACE_FILE}
+    ${SWIG_JAVA_EXAMPLECOMPONENTS_CXX_FILE}
+    ${SWIG_JAVA_EXAMPLECOMPONENTS_H_FILE})
+
+OpenSimGenerateJavaWrapper(moco
+    ${SWIG_JAVA_MOCO_INTERFACE_FILE}
+    ${SWIG_JAVA_MOCO_CXX_FILE}
+    ${SWIG_JAVA_MOCO_H_FILE})
+
+set(EXPORT_MACRO OSIM${UKIT}_EXPORTS)
+
+add_library(osim${KIT} 
+    SHARED 
+    ${SWIG_JAVA_SIMBODY_CXX_FILE} 
+    ${SWIG_JAVA_SIMBODY_H_FILE}
+    ${SWIG_JAVA_COMMON_CXX_FILE} 
+    ${SWIG_JAVA_COMMON_H_FILE}
+    ${SWIG_JAVA_SIMULATION_CXX_FILE} 
+    ${SWIG_JAVA_SIMULATION_H_FILE}
+    ${SWIG_JAVA_ACTUATORS_CXX_FILE} 
+    ${SWIG_JAVA_ACTUATORS_H_FILE}
+    ${SWIG_JAVA_EXAMPLECOMPONENTS_CXX_FILE}
+    ${SWIG_JAVA_EXAMPLECOMPONENTS_H_FILE}
+    ${SWIG_JAVA_MOCO_CXX_FILE}
+    ${SWIG_JAVA_MOCO_H_FILE}
+    OpenSimContext.cpp
+    OpenSimContext.h)
+OpenSimConfigureTarget(osim${KIT})
+
+# Disable some warnings on SWIG-generated code
+target_compile_options(osim${KIT} PRIVATE
+    $<$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:
+        -Wno-deprecated-declarations
+        -Wno-strict-aliasing
+        -Wno-uninitialized
+    >
+    $<$<CXX_COMPILER_ID:MSVC>:
+        /wd4996  # disable warnings for deprecated functions.
+        /wd4114  # disable "const const T" warnings
+    >
+)
+
+target_include_directories(osim${KIT} PRIVATE
+                           ${JAVA_INCLUDE_PATH} ${JAVA_INCLUDE_PATH2})
+
+target_link_libraries(osim${KIT} osimTools osimExampleComponents osimMoco)
+    
+set_target_properties(osim${KIT} PROPERTIES
+   DEFINE_SYMBOL ${EXPORT_MACRO}
+   PROJECT_LABEL "Java - osim${KIT}"
+   FOLDER "Bindings"
+)
+
+# RPATH: The osim libraries that osimJavaJNI needs are in the same folder as
+# osimJavaJNI.
+OpenSimAddInstallRPATHSelf(TARGET osim${KIT} LOADER)
+OpenSimAddInstallRPATHSimbody(TARGET osim${KIT} LOADER
+    FROM "${CMAKE_INSTALL_LIBDIR}")
+
+# Shared libraries are needed at runtime for applications, so we put them
+# at the top level in OpenSim/bin/*.dll (Windows) or OpenSim/lib/*.so (Linux)
+# or OpemSim/lib/*.dylib (Mac). Windows .lib files, and Linux/Mac .a static
+# archives are only needed at link time so go in sdk/lib.
+install(TARGETS osim${KIT}
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    ARCHIVE DESTINATION "${OPENSIM_INSTALL_ARCHIVEDIR}")
+
+# Don't install .class files.
+install(DIRECTORY ${SWIG_JAVA_SOURCE_BUILD_OUTPUT_DIR}/
+    DESTINATION "${OPENSIM_INSTALL_JAVASRCDIR}/${SWIG_JAVA_PACKAGE_PATH}"
+    PATTERN "*.class" EXCLUDE
+    )
+
+if(BUILD_TESTING)
+    subdirs(Test)
+endif()

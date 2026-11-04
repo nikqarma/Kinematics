@@ -1,0 +1,480 @@
+name: continuous-integration
+
+# syntax https://help.github.com/en/articles/workflow-syntax-for-github-actions
+on:
+  # Run at 2am every night.
+  schedule:
+    - cron: '0 2 * * *'
+  pull_request:
+    branches:
+      - '*'
+  push:
+    branches:
+      - main
+    tags:
+      - '*'
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    name: Windows
+
+    outputs:
+      version: ${{ steps.configure.outputs.version }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Doxygen
+      # choco install doxygen.portable # <-- too unreliable.
+      run: |
+        (New-Object System.Net.WebClient).DownloadFile("https://github.com/doxygen/doxygen/releases/download/Release_1_12_0/doxygen-1.12.0.windows.x64.bin.zip", "doxygen.zip")
+        7z x $env:GITHUB_WORKSPACE/doxygen.zip -odoxygen
+        echo "$env:GITHUB_WORKSPACE\doxygen" >> $env:GITHUB_PATH
+
+    - name: Install Python packages
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install numpy
+      #Need numpy to use SWIG numpy typemaps.
+      run: |
+        python3 -m pip install numpy==2.0
+        python3 -m pip install wheel
+        python3 -m pip install build
+        pip install --upgrade pip setuptools wheel
+        pip install delvewheel
+
+    - name: Install SWIG
+      run: |
+        choco install swig --version 4.4.1 --yes --limit-output --allow-downgrade
+        swig -swiglib
+
+    - name: Cache dependencies
+      id: cache-dependencies
+      uses: actions/cache@v3
+      with:
+        path: build/dependencies/ci-msvc-windows-release/install
+        # Every time a cache is created, it's stored with this key.
+        # In subsequent runs, if the key matches the key of an existing cache,
+        # then the cache is used. We chose for this key to depend on the
+        # operating system and a hash of the hashes of all files in the
+        # dependencies directory (non-recursive).
+        # https://help.github.com/en/actions/automating-your-workflow-with-github-actions/caching-dependencies-to-speed-up-workflows#matching-a-cache-key
+        key: ${{ runner.os }}-dependencies-${{ hashFiles('dependencies/*') }}
+
+    - name: Build dependencies
+      if: steps.cache-dependencies.outputs.cache-hit != 'true'
+      run: |
+        chdir $env:GITHUB_WORKSPACE\\dependencies
+        cmake -G "Visual Studio 17 2022" . --preset ci-msvc-windows-release -LAH
+        cmake --build --preset ci-msvc-windows-release -j 4
+
+    - name: Configure opensim-core
+      id: configure
+      run: |
+        cmake -G "Visual Studio 17 2022" . --preset ci-msvc-windows-release -LAH `
+            -DPython3_ROOT_DIR=$env:pythonLocation
+
+        $env:match = cmake -N -L build/ci-msvc-windows-release | Select-String -Pattern OPENSIM_QUALIFIED_VERSION
+        $version = $env:match.split('=')[1]
+        echo "version=$version" >> $env:GITHUB_OUTPUT
+        echo "CMAKE_INSTALL_PREFIX=$env:GITHUB_WORKSPACE\build\ci-msvc-windows-release\install" >> $env:GITHUB_OUTPUT
+        echo "OPENSIM_DEPENDENCIES_DIR=$env:GITHUB_WORKSPACE\build\dependencies\ci-msvc-windows-release\install" >> $env:GITHUB_OUTPUT
+
+    - name: Build opensim-core
+    # Install now to avoid building bindings twice (TODO: still an issue with Visual Studio 2022).
+      run: |
+        cmake --build --preset ci-msvc-windows-release -j 4
+        cmake --build --preset ci-msvc-windows-release --target doxygen
+        cmake --build --preset ci-msvc-windows-release --target install
+
+    - name: Test opensim-core
+      run: |
+        ctest --preset ci-msvc-windows-release -j 4 -E Java_.*
+
+    - name: Install opensim-core
+    # TODO: This is where we wish to do the installing, but it's done above for now.
+      run: |
+        Copy-Item -Path "${{ steps.configure.outputs.CMAKE_INSTALL_PREFIX }}" -Destination "opensim-core-${{ steps.configure.outputs.version }}" -Recurse
+        7z a "opensim-core-${{ steps.configure.outputs.version }}.zip" "opensim-core-${{ steps.configure.outputs.version }}"
+
+    - name: Build wheel
+      run: |
+        cd ${{ steps.configure.outputs.CMAKE_INSTALL_PREFIX }}/sdk/Python
+        python3 setup.py bdist_wheel
+
+    - name: Capture wheel path
+      id: wheel
+      run: |
+        cd ${{ steps.configure.outputs.CMAKE_INSTALL_PREFIX }}/sdk/Python/dist
+        $wheel = (Get-ChildItem -Filter "opensim*.whl" -File | Select-Object -First 1).Name
+        "path=$wheel" >> $env:GITHUB_OUTPUT
+
+    - name: Upload Windows wheel
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.wheel.outputs.path }}
+        path: ${{ steps.configure.outputs.CMAKE_INSTALL_PREFIX }}/sdk/Python/dist/${{ steps.wheel.outputs.path }}
+
+    - name: Upload opensim-core
+      uses: actions/upload-artifact@v4
+      with:
+        name: opensim-core-${{ steps.configure.outputs.version }}-win
+        path: opensim-core-${{ steps.configure.outputs.version }}.zip
+
+  macos:
+    runs-on: macos-15
+    name: MacOS
+
+    outputs:
+      version: ${{ steps.configure.outputs.version }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Python packages
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install Homebrew packages
+      # Save the gfortran version to a file so we can use it in the cache key.
+      run: |
+        brew install pkgconfig autoconf libtool automake wget pcre doxygen llvm bison
+        brew reinstall gcc
+        pip3 install numpy==2.0
+        pip3 install wheel
+        pip3 install build
+        gfortran -v
+        mkdir gfortran_version
+        gfortran -v &> gfortran_version/gfortran_version.txt
+
+    - name: Install SWIG
+      run: |
+        mkdir ~/swig-source && cd ~/swig-source
+        wget https://github.com/swig/swig/archive/refs/tags/v4.4.1.tar.gz
+        tar xzf v4.4.1.tar.gz && cd swig-4.4.1
+        sh autogen.sh && ./configure BISON="$(brew --prefix bison)/bin/bison" --prefix=$HOME/swig --disable-ccache
+        make && make -j4 install
+
+    - name: Cache dependencies
+      id: cache-dependencies
+      uses: actions/cache@v3
+      with:
+        path: build/dependencies/ci-make-macos-release/install
+        # If Homebrew updates the gcc package, then our cache of IPOPT is invalid.
+        # Specifically, the pkgcfg_lib_IPOPT_gfortran CMake variable becomes
+        # undefined.
+        key: ${{ runner.os }}-dependencies-${{ hashFiles('dependencies/*') }}-${{ hashFiles('gfortran_version/*') }}
+
+    - name: Build dependencies
+      if: steps.cache-dependencies.outputs.cache-hit != 'true'
+      run: |
+        cd $GITHUB_WORKSPACE/dependencies
+        cmake . --preset ci-make-macos-release -LAH
+        cmake --build --preset ci-make-macos-release -j 4
+
+    - name: Configure opensim-core
+      id: configure
+      run: |
+        cmake -S $GITHUB_WORKSPACE --preset ci-make-macos-release -LAH \
+            -DSWIG_EXECUTABLE=$HOME/swig/bin/swig
+
+        VERSION=`cmake -N -L $GITHUB_WORKSPACE/build/ci-make-macos-release | grep OPENSIM_QUALIFIED_VERSION | cut -d "=" -f2`
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "CMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/build/ci-make-macos-release/install" >> $GITHUB_OUTPUT
+        echo "OPENSIM_DEPENDENCIES_DIR=$GITHUB_WORKSPACE/build/dependencies/ci-make-macos-release/install" >> $GITHUB_OUTPUT
+
+    - name: Build opensim-core
+      run: |
+        cmake --build --preset ci-make-macos-release -j 4
+
+    - name: Test opensim-core
+      run: |
+        ctest --preset ci-make-macos-release -j 4
+
+    - name: Install opensim-core
+      run: |
+        cmake --build --preset ci-make-macos-release --target doxygen
+        cmake --build --preset ci-make-macos-release --target install
+        cd $GITHUB_WORKSPACE
+        mv ${{ steps.configure.outputs.CMAKE_INSTALL_PREFIX }} opensim-core-${{ steps.configure.outputs.version }}
+        zip --symlinks --recurse-paths --quiet opensim-core-${{ steps.configure.outputs.version }}.zip opensim-core-${{ steps.configure.outputs.version }}
+        mv opensim-core-${{ steps.configure.outputs.version }} ${{ steps.configure.outputs.CMAKE_INSTALL_PREFIX }}
+
+    - name: Build wheel
+      run: |
+        cd ${{ steps.configure.outputs.CMAKE_INSTALL_PREFIX }}/sdk/Python
+        python3 -m build --wheel
+
+    - name: Capture wheel path
+      id: wheel
+      run: |
+        cd ${{ steps.configure.outputs.CMAKE_INSTALL_PREFIX }}/sdk/Python/dist
+        echo "path=$(ls -1 opensim*.whl | head -n1)" >> $GITHUB_OUTPUT
+
+    - name: Upload macOS wheel
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.wheel.outputs.path }}
+        path: ${{ steps.configure.outputs.CMAKE_INSTALL_PREFIX }}/sdk/Python/dist/${{ steps.wheel.outputs.path }}
+
+    - name: Test Python bindings
+      run: |
+        cd ${{ steps.configure.outputs.CMAKE_INSTALL_PREFIX }}/sdk/Python
+        pip3 install ${{ steps.configure.outputs.CMAKE_INSTALL_PREFIX }}/sdk/Python/dist/${{ steps.wheel.outputs.path }}
+        # Run the python tests, verbosely.
+        python3 -m unittest discover --start-directory opensim/tests --verbose
+
+    - name: Upload opensim-core
+      uses: actions/upload-artifact@v4
+      with:
+        # The upload-artifact zipping does not preserve symlinks or executable
+        # bits. So we zip ourselves, even though this causes a double-zip.
+        name: opensim-core-${{ steps.configure.outputs.version }}-mac-arm64
+        path: opensim-core-${{ steps.configure.outputs.version }}.zip
+
+  manylinux_2_28_release:
+    name: ManyLinux 2.28 (release)
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/pypa/manylinux_2_28_x86_64
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Mark workspace as safe for git (manylinux container)
+      run: |
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        git config --global --add safe.directory /__w/opensim-core/opensim-core
+
+    - name: Set up Python path environment
+      run: |
+        echo "/opt/python/cp311-cp311/bin" >> $GITHUB_PATH
+
+    - name: Install Numpy & Python Build Dependencies
+      run: |
+        pip install pip --upgrade
+        pip install numpy==2.0 build wheel auditwheel
+
+    - name: Install packages
+      run: |
+        dnf update -y
+        dnf install -y \
+          gcc-c++ \
+          make \
+          cmake \
+          libtool \
+          autoconf \
+          pkgconfig \
+          gcc-gfortran \
+          openblas-devel \
+          lapack-devel \
+          freeglut-devel \
+          libXi-devel \
+          libXmu-devel \
+          doxygen \
+          patchelf \
+          zip \
+          wget \
+          pcre2-devel \
+          java-11-openjdk-devel
+
+    - name: Cache dependencies
+      id: cache-dependencies
+      uses: actions/cache@v3
+      with:
+        path: build/dependencies/ci-make-linux-release/install
+        key: ${{ runner.os }}-manylinux2_28-dependencies-${{ hashFiles('dependencies/*') }}
+
+    - name: Build dependencies
+      if: steps.cache-dependencies.outputs.cache-hit != 'true'
+      run: |
+        cd $GITHUB_WORKSPACE/dependencies
+        cmake . --preset ci-make-linux-release -LAH
+        cmake --build --preset ci-make-linux-release -j 4
+
+    - name: Configure opensim-core
+      id: configure
+      run: |
+        cmake -S $GITHUB_WORKSPACE --preset ci-make-linux-release -DPython3_ROOT_DIR=/opt/python/cp311-cp311 -LAH
+
+        VERSION=`cmake -N -L $GITHUB_WORKSPACE/build/ci-make-linux-release | grep OPENSIM_QUALIFIED_VERSION | cut -d "=" -f2`
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "CMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/build/ci-make-linux-release/install" >> $GITHUB_OUTPUT
+        echo "OPENSIM_DEPENDENCIES_DIR=$GITHUB_WORKSPACE/build/dependencies/ci-make-linux-release/install" >> $GITHUB_OUTPUT
+
+    - name: Build opensim-core
+      run: |
+        cmake --build --preset ci-make-linux-release -j 4
+
+    - name: Test opensim-core
+      run: |
+        # TODO: Temporary for python to find Simbody libraries.
+        export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${{ steps.configure.outputs.OPENSIM_DEPENDENCIES_DIR }}/simbody/lib
+        ctest --preset ci-make-linux-release -j 4
+
+    - name: Install opensim-core
+      run: |
+        cmake --build --preset ci-make-linux-release --target doxygen
+        cmake --build --preset ci-make-linux-release --target install
+        cd $GITHUB_WORKSPACE
+        mv ${{ steps.configure.outputs.CMAKE_INSTALL_PREFIX }} opensim-core-${{ steps.configure.outputs.version }}
+        zip --symlinks --recurse-paths --quiet opensim-core-${{ steps.configure.outputs.version }}-manylinux2_28.zip opensim-core-${{ steps.configure.outputs.version }}
+        mv opensim-core-${{ steps.configure.outputs.version }} ${{ steps.configure.outputs.CMAKE_INSTALL_PREFIX }}
+
+    - name: Build wheel
+      run: |
+        cd ${{ steps.configure.outputs.CMAKE_INSTALL_PREFIX }}/sdk/Python
+        python3 -m build --wheel
+
+    - name: Auditwheel repair (Manylinux compliance)
+      run: |
+        cd ${{ steps.configure.outputs.CMAKE_INSTALL_PREFIX }}/sdk/Python
+        mkdir -p dist/repaired
+        auditwheel repair dist/opensim*.whl -w dist/repaired/
+        # Overwrite original wheel with repaired manylinux wheel
+        mv dist/repaired/*.whl dist/
+        rmdir dist/repaired/
+
+    - name: Capture wheel path
+      id: wheel
+      run: |
+         cd ${{ steps.configure.outputs.CMAKE_INSTALL_PREFIX }}/sdk/Python/dist
+         ls -al
+         echo "path=$(ls -1 opensim*.whl | head -n1)" >> $GITHUB_OUTPUT
+
+    - name: Upload Linux wheel
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.wheel.outputs.path }}
+        path: ${{ steps.configure.outputs.CMAKE_INSTALL_PREFIX }}/sdk/Python/dist/${{ steps.wheel.outputs.path }}
+
+    - name: Test Python bindings
+      run: |
+        cd ${{ steps.configure.outputs.CMAKE_INSTALL_PREFIX }}/sdk/Python
+        pip3 install ${{ steps.configure.outputs.CMAKE_INSTALL_PREFIX }}/sdk/Python/dist/${{ steps.wheel.outputs.path }}
+        # Run the python tests, verbosely.
+        python3 -m unittest discover --start-directory opensim/tests --verbose
+
+    - name: Upload opensim-core
+      uses: actions/upload-artifact@v4
+      with:
+        # The upload-artifact zipping does not preserve symlinks or executable
+        # bits. So we zip ourselves, even though this causes a double-zip.
+        name: opensim-core-${{ steps.configure.outputs.version }}-manylinux2_28-linux
+        path: opensim-core-${{ steps.configure.outputs.version }}-manylinux2_28.zip
+
+  manylinux_2_28_debug:
+    name: ManyLinux 2.28 (debug, minimal)
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/pypa/manylinux_2_28_x86_64
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Mark workspace as safe for git (manylinux container)
+      run: |
+        git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        git config --global --add safe.directory /__w/opensim-core/opensim-core
+
+    - name: Install packages
+      run: |
+        dnf update -y
+        dnf install -y \
+          gcc-c++ \
+          make \
+          cmake \
+          libtool \
+          autoconf \
+          pkgconfig \
+          gcc-gfortran \
+          openblas-devel \
+          lapack-devel \
+          freeglut-devel \
+          libXi-devel \
+          libXmu-devel
+
+    - name: Cache dependencies
+      id: cache-dependencies
+      uses: actions/cache@v3
+      with:
+        path: build/dependencies/dev-minimal-linux-debug/install
+        key: ${{ runner.os }}-manylinux2_28-debug-dependencies-${{ hashFiles('dependencies/*') }}
+
+    - name: Build dependencies
+      if: steps.cache-dependencies.outputs.cache-hit != 'true'
+      run: |
+        cd $GITHUB_WORKSPACE/dependencies
+        cmake . --preset dev-minimal-linux-debug -LAH
+        cmake --build --preset dev-minimal-linux-debug -j 4
+
+    - name: Configure opensim-core
+      id: configure
+      run: |
+        cmake -S $GITHUB_WORKSPACE --preset dev-minimal-linux-debug -LAH
+        echo "OPENSIM_DEPENDENCIES_DIR=$GITHUB_WORKSPACE/build/dependencies/dev-minimal-linux-debug/install" >> $GITHUB_OUTPUT
+
+    - name: Build opensim-core
+      run: |
+        cmake --build --preset dev-minimal-linux-debug -j 4
+
+    - name: Test opensim-core
+      run: |
+        export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${{ steps.configure.outputs.OPENSIM_DEPENDENCIES_DIR }}/simbody/lib
+        ctest --preset dev-minimal-linux-debug -j 4
+
+  build_gui:
+    name: Build GUI
+    runs-on: ubuntu-latest
+    # enable "build-gui" if part of title or PR body
+    if: contains(github.event.pull_request.title, '[build-gui]') || contains(github.event.pull_request.body, '[build-gui]')
+    steps:
+    - name: Dispatch opensim-gui workflow and get the run ID
+      uses: codex-/return-dispatch@v4
+      id: return_dispatch
+      with:
+        token: ${{ secrets.PAT_TOKEN }}
+        ref: main
+        repo: opensim-gui
+        owner: opensim-org
+        workflow: build-on-core-pr.yml
+        workflow_inputs: |
+            {
+              "distinct_id": "${{ github.run_id }}"
+            }
+
+
+    - name: Use the output run ID
+      run: |
+          echo "Run ID:  ${{ steps.return_dispatch.outputs.run_id }}"
+
+    - name: Await opensim-gui workflow
+      uses: Codex-/await-remote-run@v2
+      with:
+        token: ${{ secrets.PAT_TOKEN }}
+        repo: opensim-gui
+        owner: opensim-org
+        run_id: ${{ steps.return_dispatch.outputs.run_id }}
+        run_timeout_seconds: 10000
+
+  style:
+    name: Style
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Check for tabs
+      # Ensure that there are no tabs in source code.
+      # GREP returns 0 (true) if there are any matches, and
+      # we don't want any matches. If there are matches,
+      # print a helpful message, and make the test fail by using "false".
+      # The GREP command here checks for any tab characters in the the files
+      # that match the specified pattern. GREP does not pick up explicit tabs
+      # (e.g., literally a \t in a source file).
+      run: if grep --line-num --recursive --exclude-dir="*dependencies*" --exclude-dir="*snopt*" --include={CMakeLists.txt,*.cpp,*.c,*.h} -P "\t" . ; then echo "Tabs found in the lines shown above. See CONTRIBUTING.md about tabs."; false; fi
