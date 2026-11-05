@@ -18,6 +18,7 @@ Frames follow OpenSim/MS-Human-700: x anterior, y superior, z lateral
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -36,14 +37,27 @@ REFS = {
     "Clanton2015": "Clanton T.O. et al. (2015) Radiographic identification of the lateral ankle "
                    "ligaments (J Bone Joint Surg Am), footprint distances as summarised by ACFAS "
                    "Scientific Literature Review, June 2015 - original paper not yet checked",
-    "Boonstra2015": "Radiographic identification of the deltoid ligament complex of the medial ankle "
-                    "(PubMed 26443536), distances as summarised in search abstracts - original paper "
-                    "not yet checked",
+    "Campbell2014": "Campbell K.J. et al. (2014) The ligament anatomy of the deltoid complex of the ankle: "
+                    "a qualitative and quantitative anatomical study. J Bone Joint Surg Am 96(8):e62 "
+                    "(n=14; Table I footprint offsets and lengths, read in full text)",
+    "Takao2020": "Takao M. et al. (2020) Strain pattern of each ligamentous band of the superficial "
+                 "deltoid ligament: a cadaver study. BMC Musculoskelet Disord 21:289 (n=6, full text)",
+    "Funk2000": "Funk J.R. et al. (2000) Linear and quasi-linear viscoelastic characterization of ankle "
+                "ligaments. J Biomech Eng 122:15-22; force-strain fits T = a(exp(b*eps)-1) as tabulated "
+                "in Xu C. et al. (2019) J Orthop Surg Res 14:114 (PMC6489249), Table 1 - Funk's own "
+                "tables not yet checked",
+    "Siegler1988": "Siegler S., Block J., Schneck C.D. (1988) The mechanical characteristics of the "
+                   "collateral ligaments of the human ankle joint. Foot Ankle 8:234-242; tibionavicular "
+                   "stiffness 39.1 N/mm and failure load 120 N as cited by Shin J. et al. (2012) Ann "
+                   "Biomed Eng (automotive FE foot model) and Xu 2019 - original tables not yet checked",
 }
 
-# Placeholder stiffness for the deltoid bands: mean of the three lateral
-# ligaments in Rochelle2020. No verified per-band deltoid stiffness was found.
-DELTOID_PLACEHOLDER_K = (44.7 + 45.8 + 59.0) / 3 * 1000  # N/m
+# Piecewise-linear representation of exponential force-strain curves: the
+# curve is matched at these strains (secant slopes between them) and
+# continued linearly with its tangent slope beyond the last one. Each extra
+# segment is a parallel tension-only spring on the same path whose deadband
+# starts at that strain, so the stack is still native MuJoCo.
+EXP_BREAKS = (0.0, 0.02, 0.04, 0.06, 0.08, 0.10)
 
 
 @dataclass(frozen=True)
@@ -52,7 +66,9 @@ class Ligament:
     full_name: str
     body1: str               # proximal attachment body
     body2: str               # distal attachment body
-    stiffness: float         # N/m, linear region
+    # Force-strain curve: ("linear", k [N/m]) or ("exp", a [N], b [-]) with
+    # T(eps) = a * (exp(b * eps) - 1), eps relative to the slack length.
+    curve: tuple
     stiffness_source: str
     # Ankle angle(s) (+ dorsiflexion) at which the ligament is reported to become
     # taut. The slack length is the longest model length over these angles, so
@@ -61,41 +77,81 @@ class Ligament:
     taut_source: str
     failure_load: float | None = None  # N
     notes: str = ""
+    reference_length: float | None = None  # m, published centre-to-centre length at neutral
 
+
+TNL_K = 39.1e3  # N/m, Siegler1988 (secondary)
 
 LIGAMENTS = [
     # ---- lateral collateral complex --------------------------------------
     Ligament("ATFL_r", "anterior talofibular", "tibia_r", "talus_r",
-             44.7e3, "measured: Rochelle2020", (0.0,), "measured: Takao2021 (tenses from 0 deg PF)",
+             ("linear", 44.7e3), "measured: Rochelle2020", (0.0,), "measured: Takao2021 (tenses from 0 deg PF)",
              failure_load=263.6),
     Ligament("CFL_r", "calcaneofibular", "tibia_r", "calcn_r",
-             45.8e3, "measured: Rochelle2020", (-20.0, 5.0),
+             ("linear", 45.8e3), "measured: Rochelle2020", (-20.0, 5.0),
              "measured: Takao2021 (biphasic: tenses from 20 deg PF and from ~5 deg DF)",
              failure_load=367.8,
              notes="nearly isometric over ankle flexion in this geometry; the straight-line path "
                    "on a 1-DOF hinge reproduces the PF branch but not DF tensioning"),
     Ligament("PTFL_r", "posterior talofibular", "tibia_r", "talus_r",
-             59.0e3, "measured: Rochelle2020", (10.0,),
+             ("linear", 59.0e3), "measured: Rochelle2020", (10.0,),
              "qualitative: taut in dorsiflexion; 10 deg onset assumed",
              failure_load=351.4),
-    # ---- deltoid complex -------------------------------------------------
+    # ---- deltoid complex (attachments: Campbell2014) ----------------------
     Ligament("TNL_r", "tibionavicular (superficial deltoid)", "tibia_r", "calcn_r",
-             DELTOID_PLACEHOLDER_K, "placeholder", (0.0,),
-             "qualitative: taut in plantarflexion; onset at neutral assumed"),
+             ("linear", TNL_K), "measured (secondary): Siegler1988", (-10.0,),
+             "measured: Takao2020 (tenses from 10 deg PF)",
+             failure_load=120.0, reference_length=0.0336),
     Ligament("TSL_r", "tibiospring (superficial deltoid)", "tibia_r", "calcn_r",
-             DELTOID_PLACEHOLDER_K, "placeholder", (0.0,),
-             "qualitative: restrains eversion; onset at neutral assumed",
+             ("linear", TNL_K), "assumed: equal to TNL (no per-band value found; Siegler1988 reports "
+                                "the tibiospring among the strongest bands, so this is likely low)",
+             (-15.0,), "measured: Takao2020 (tenses from 15 deg PF)",
+             reference_length=0.0250,
              notes="inserts on the spring ligament, which is part of the rigid calcn_r body here"),
     Ligament("TCL_r", "tibiocalcaneal (superficial deltoid)", "tibia_r", "calcn_r",
-             DELTOID_PLACEHOLDER_K, "placeholder", (0.0,),
-             "qualitative: reported to tense from 0 deg DF (abstract only); onset at neutral"),
+             ("exp", 0.51, 45.99), "measured (secondary): Funk2000", (0.0,),
+             "measured: Takao2020 (tenses from 0 deg into DF)",
+             reference_length=0.0288),
     Ligament("dATTL_r", "deep anterior tibiotalar", "tibia_r", "talus_r",
-             DELTOID_PLACEHOLDER_K, "placeholder", (0.0,),
-             "qualitative: taut in plantarflexion; onset at neutral assumed"),
+             ("exp", 2.06, 20.11), "measured (secondary): Funk2000 'anterior tibiotalar'", (0.0,),
+             "qualitative: taut in plantarflexion; onset at neutral assumed",
+             reference_length=0.0120),
     Ligament("dPTTL_r", "deep posterior tibiotalar", "tibia_r", "talus_r",
-             DELTOID_PLACEHOLDER_K, "placeholder", (0.0,),
-             "qualitative: taut in dorsiflexion; onset at neutral assumed"),
+             ("exp", 1.34, 28.65), "measured (secondary): Funk2000 'posterior tibiotalar'", (0.0,),
+             "qualitative: taut in dorsiflexion; onset at neutral assumed",
+             reference_length=0.0103,
+             notes="with Campbell2014 geometry this band lies anterior of the model's ankle axis and "
+                   "so slackens in dorsiflexion - the model's axis sits ~7 mm posterior and ~8 mm "
+                   "inferior of the intercollicular groove"),
 ]
+
+
+def curve_force(lig: Ligament, strain: float) -> float:
+    """Tension (N) on the ligament's published force-strain curve; slack length L0 is not needed
+    for 'exp' curves, and 'linear' curves are k * strain * L0 so take L0 via linear_force."""
+    if lig.curve[0] != "exp":
+        raise ValueError("use spring_segments for linear ligaments")
+    a, b = lig.curve[1], lig.curve[2]
+    return a * (np.exp(b * max(strain, 0.0)) - 1.0)
+
+
+def spring_segments(lig: Ligament, L0: float) -> list[tuple[float, float]]:
+    """Parallel tension-only springs reproducing the ligament curve: [(strain_start, k_increment N/m)].
+
+    Summed, the springs give a force that is piecewise linear in length, matching
+    the curve at EXP_BREAKS and continuing with the tangent slope beyond them.
+    """
+    if lig.curve[0] == "linear":
+        return [(0.0, float(lig.curve[1]))]
+    a, b = lig.curve[1], lig.curve[2]
+    T = lambda e: a * (np.exp(b * e) - 1.0)  # noqa: E731
+    slopes = [(T(e1) - T(e0)) / ((e1 - e0) * L0) for e0, e1 in zip(EXP_BREAKS[:-1], EXP_BREAKS[1:])]
+    slopes.append(a * b * np.exp(b * EXP_BREAKS[-1]) / L0)
+    segs, prev = [], 0.0
+    for e, s in zip(EXP_BREAKS, slopes):
+        segs.append((e, float(s - prev)))
+        prev = s
+    return segs
 
 # Viscous damping on every ligament (N*s/m). MuJoCo tendon damping also acts
 # while the ligament is slack, so it is kept small; it is mainly there for
@@ -123,6 +179,39 @@ def _pick(v: np.ndarray, mask: np.ndarray, score: np.ndarray) -> np.ndarray:
     return v[idx[np.argmax(score[idx])]]
 
 
+# Body origins in the tibia_r frame at neutral (all joints zero), from
+# MS-Human-700 Body_Leg_Foot_r.xml. The builder checks these against the XML.
+BODY_ORIGIN_IN_TIBIA = {
+    "tibia_r": np.zeros(3),
+    "talus_r": np.array([-0.01, -0.4, 0.0]),
+    "calcn_r": np.array([-0.01, -0.4, 0.0]) + np.array([-0.04877, -0.04195, 0.00792]),
+}
+
+# Campbell2014 Table I, per deltoid band:
+#   origin offset from the distal centre of the intercollicular groove (mm; +anterior, +superior, +lateral),
+#   orientation origin->insertion (deg; angle to the coronal / transverse / sagittal plane with
+#   sign +anterior, +inferior, +lateral), centre-to-centre length (mm).
+# The three orientation angles are read as each plane's normal component
+# (sin(angle)); for five bands the components form a unit vector to within 6%.
+# The tibionavicular row does not (|v| = 1.21), so its insertion uses the
+# navicular landmark instead.
+CAMPBELL2014 = {
+    "TNL_r": dict(origin=(13.8, 4.9, 5.7), orient=(44.7, 77.4, -5.5), length=33.6),
+    "TSL_r": dict(origin=(10.8, 6.9, 1.8), orient=(8.6, 75.6, 11.2), length=25.0),
+    "TCL_r": dict(origin=(5.5, -0.4, 0.6), orient=(-7.0, 69.1, 20.3), length=28.8),
+    "dATTL_r": dict(origin=(9.0, -3.6, 4.9), orient=(22.5, 59.9, 23.8), length=12.0),
+    "dPTTL_r": dict(origin=(-0.7, -2.2, 6.4), orient=(8.5, 56.0, 31.9), length=10.3),
+}
+
+
+def campbell_direction(ant_deg: float, inf_deg: float, lat_deg: float) -> tuple[np.ndarray, float]:
+    """Unit origin->insertion vector (tibia frame) from Campbell2014 angles, and the pre-normalisation norm."""
+    v = np.array([math.sin(math.radians(ant_deg)), -math.sin(math.radians(inf_deg)),
+                  math.sin(math.radians(lat_deg))])
+    n = float(np.linalg.norm(v))
+    return v / n, n
+
+
 def attachments(mesh_dir: Path) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     """Return {ligament: (point on body1, point on body2)} in each body's own frame."""
     fib = load_stl(mesh_dir / "r_fibula.stl")   # tibia_r frame
@@ -141,6 +230,18 @@ def attachments(mesh_dir: Path) -> dict[str, tuple[np.ndarray, np.ndarray]]:
 
     # Medial malleolus: most distal tibial point on the medial side.
     medial = tib[:, z] < -0.010
+    # Deltoid reference point: distal centre of the intercollicular groove
+    # (Campbell2014's landmark in its text and figures; its Table I header says
+    # "inferior tip of the medial malleolus"). Taken as the midpoint of the
+    # anterior and posterior colliculus tips: the most anterior and most
+    # posterior of the distal tibial vertices lying medial to the talus's
+    # medial wall. (The plain "most distal medial vertex" lands on the plafond
+    # corner, inside the talus.)
+    talus_medial_wall = tal[:, z].min() + BODY_ORIGIN_IN_TIBIA["talus_r"][z]
+    malleolus = tib[:, z] < talus_medial_wall
+    mm_lowest = _pick(tib, malleolus, -tib[:, y])
+    distal_malleolus = malleolus & (tib[:, y] < mm_lowest[y] + 0.006)
+    dcig = 0.5 * (_pick(tib, distal_malleolus, tib[:, x]) + _pick(tib, distal_malleolus, -tib[:, x]))
     mm_tip = _pick(tib, medial, -tib[:, y])
 
     def mm_band(h: float, score: np.ndarray, zmax: float = -0.010) -> np.ndarray:
@@ -157,10 +258,35 @@ def attachments(mesh_dir: Path) -> dict[str, tuple[np.ndarray, np.ndarray]]:
 
     # Sustentaculum tali: most medial calcaneal point on the shelf directly
     # beneath the talus (talar underside sits at y ~ 0.032 in this frame).
+    sust_region = (foot[:, y] > 0.015) & (foot[:, y] < 0.035)
     sustentaculum = _pick(foot, foot_band(0.045, 0.060) & (foot[:, y] > 0.020) & (foot[:, y] < 0.033),
                           -foot[:, z])
+    # Posterior point of the sustentaculum: most posterior vertex of the medial
+    # shelf (within 6 mm of the sustentaculum's medial extent).
+    sust_posterior = _pick(foot, foot_band(0.030, 0.065) & sust_region
+                           & (foot[:, z] < sustentaculum[z] + 0.006), -foot[:, x])
     # Navicular tuberosity: most medial midfoot point.
     navicular_tub = _pick(foot, foot_band(0.070, 0.100), -foot[:, z])
+    # Talar landmarks: anteromedial corner of the trochlea and the
+    # posteromedial talar tubercle.
+    tal_upper = tal[:, y] > 0.004
+    am_trochlea = _pick(tal, tal_upper, tal[:, x] - tal[:, z])
+    pm_tubercle = _pick(tal, tal[:, y] < 0.0, -tal[:, x] - tal[:, z])
+
+    def unit(*v):
+        v = np.asarray(v, float)
+        return v / np.linalg.norm(v)
+
+    def campbell(name: str) -> tuple[np.ndarray, np.ndarray]:
+        """Deltoid origin (tibia frame) and the insertion implied by Campbell2014's orientation
+        and length, still in the tibia frame at neutral."""
+        row = CAMPBELL2014[name]
+        o = dcig + np.array(row["origin"]) / 1000.0
+        u, _ = campbell_direction(*row["orient"])
+        return o, o + u * row["length"] / 1000.0
+
+    def to_body(p_tibia: np.ndarray, body: str) -> np.ndarray:
+        return p_tibia - BODY_ORIGIN_IN_TIBIA[body]
 
     pts = {
         # ATFL: fibular footprint 13.8 mm from the tip on the anterior border
@@ -177,19 +303,32 @@ def attachments(mesh_dir: Path) -> dict[str, tuple[np.ndarray, np.ndarray]]:
         "PTFL_r": (_pick(fib, (fib[:, y] > lm_tip[y] + 0.004) & (fib[:, y] < lm_tip[y] + 0.012),
                          -fib[:, x] - fib[:, z]),
                    _pick(tal, tal[:, z] > 0, -tal[:, x])),
-        # Deltoid: anterior colliculus (~12 mm above the tip, Boonstra2015) to
-        # the navicular tuberosity.
-        "TNL_r": (mm_band(0.012, tib[:, x]), navicular_tub),
-        # Anterior colliculus to the spring ligament, taken as the midpoint of
-        # the sustentaculum and the navicular tuberosity (the spring ligament
-        # spans these two).
-        "TSL_r": (mm_band(0.010, tib[:, x] - tib[:, z]), 0.5 * (sustentaculum + navicular_tub)),
-        # Medial malleolus to the sustentaculum tali.
-        "TCL_r": (mm_band(0.004, -tib[:, z]), sustentaculum),
-        # Deep anterior tibiotalar: anterior colliculus to the medial talar neck.
-        "dATTL_r": (mm_band(0.006, tib[:, x]), _pick(tal, tal_med, tal[:, x])),
-        # Deep posterior tibiotalar: posterior colliculus, ~8 mm posterior-
-        # superior of the tip (Boonstra2015), to the posteromedial talus.
-        "dPTTL_r": (mm_band(0.008, -tib[:, x], zmax=-0.015), _pick(tal, tal_med, -tal[:, x])),
     }
+    # ---- Deltoid: origins and insertions from Campbell2014 Table I ----------
+    # Origins: Table I offsets from the inferior tip of the medial malleolus.
+    # Insertions: origin + published length along the published orientation
+    # (this does not depend on the coarse talus/foot meshes) - except the
+    # tibionavicular, whose orientation row is internally inconsistent; its
+    # navicular footprint is 9.7 mm from the tuberosity along the
+    # talonavicular joint line (taken as dorsal) and 3.4 mm distal to it.
+    for name in CAMPBELL2014:
+        lig = next(L for L in LIGAMENTS if L.name == name)
+        o, ins = campbell(name)
+        if name == "TNL_r":
+            pts[name] = (o, navicular_tub + np.array([0.0034, 0.0097, 0.0]))
+        else:
+            pts[name] = (o, to_body(ins, lig.body2))
     return pts
+
+
+def landmark_report(mesh_dir: Path) -> dict[str, float]:
+    """Distance (m) from each attachment point to the nearest vertex of its bone mesh."""
+    meshes = {"tibia_r": np.vstack([load_stl(mesh_dir / "r_tibia.stl"), load_stl(mesh_dir / "r_fibula.stl")]),
+              "talus_r": load_stl(mesh_dir / "r_talus.stl"), "calcn_r": load_stl(mesh_dir / "r_foot.stl")}
+    pts = attachments(mesh_dir)
+    out = {}
+    for lig in LIGAMENTS:
+        p1, p2 = pts[lig.name]
+        out[lig.name] = max(np.linalg.norm(meshes[lig.body1] - p1, axis=1).min(),
+                            np.linalg.norm(meshes[lig.body2] - p2, axis=1).min())
+    return out

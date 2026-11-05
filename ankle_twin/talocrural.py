@@ -30,16 +30,16 @@ from __future__ import annotations
 
 import math
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 import numpy as np
 
-# Ankle (talocrural) axis in the talus/tibia frame at neutral, from MS-Human-700.
-ANKLE_AXIS = np.array([-0.105014, -0.174022, 0.979126])
+# The joint is built around whatever axis the ankle hinge has (ankle_axis.py).
 
 PARAMS = {
     # name: (value, unit, source)
-    "plafond_radius": (0.0200, "m", "mesh: lower envelope of tibial plafond vertices, 19.5-20.6 mm "
-                                    "from the ankle axis over +-45 deg"),
+    # plafond radius: measured from the tibia mesh about whichever ankle axis
+    # the build uses (see plafond_radius()); ~20.7 mm about the original axis.
     "clearance": (0.0002, "m", "assumed: unloaded joint clearance"),
     "trochlea_half_width": (0.0140, "m", "assumed: 28 mm trochlear width (talus mesh too coarse to fit)"),
     "plafond_arc_deg": (45.0, "deg", "mesh: plafond vertices span about +-45 deg about the axis"),
@@ -99,11 +99,40 @@ def _fmt(v) -> str:
     return " ".join(f"{c:.6g}" for c in v)
 
 
-def add_joint(model: ET.Element, femur: ET.Element) -> None:
-    """Convert the ankle hinge into the 6-DOF talocrural joint with contact geometry."""
+def plafond_radius(mesh_dir: Path, centre: np.ndarray, a: np.ndarray) -> float:
+    """Radius of the tibial plafond about an axis (centre in the tibia frame, unit direction a).
+
+    Tibia vertices within +-45 deg of superior, within 15 mm of the centre along
+    the axis and 12-35 mm from it are binned in 15 deg sectors; the radius is
+    the median of the sector minima (the articular lower envelope).
+    """
+    import ligaments as LIG
+    tib = LIG.load_stl(mesh_dir / "r_tibia.stl") - centre
+    e2 = np.array([0.0, 1.0, 0.0]) - a[1] * a
+    e2 /= np.linalg.norm(e2)
+    e1 = np.cross(e2, a)
+    s = tib @ a
+    r = tib - np.outer(s, a)
+    rad = np.linalg.norm(r, axis=1)
+    th = np.degrees(np.arctan2(r @ e1, r @ e2))
+    keep = (np.abs(th) < 45) & (np.abs(s) < 0.015) & (rad > 0.012) & (rad < 0.035)
+    mins = [rad[keep & (th >= lo) & (th < lo + 15)].min()
+            for lo in range(-45, 45, 15) if np.any(keep & (th >= lo) & (th < lo + 15))]
+    return float(np.median(mins))
+
+
+def add_joint(model: ET.Element, femur: ET.Element, mesh_dir: Path) -> None:
+    """Convert the ankle hinge into the 6-DOF talocrural joint with contact geometry.
+
+    The joint follows whatever axis the hinge currently has (its pos/axis attributes),
+    so it works with any axis option in ankle_axis.py.
+    """
     bodies = {b.get("name"): b for b in femur.iter("body")}
     tibia, talus = bodies["tibia_r"], bodies["talus_r"]
     talus_pos = np.array([float(c) for c in talus.get("pos").split()])
+    hinge = next(j for j in talus.iter("joint") if j.get("name") == "ankle_angle_r")
+    axis_pt = np.array([float(c) for c in hinge.get("pos", "0 0 0").split()])     # talus frame
+    axis_dir = np.array([float(c) for c in hinge.get("axis").split()])
 
     # ---- defaults -----------------------------------------------------------
     default = model.find("default")
@@ -122,29 +151,31 @@ def add_joint(model: ET.Element, femur: ET.Element) -> None:
             "name": name, "class": "talar_play", "type": jtype, "pos": "0 0 0", "axis": axis, "range": rng}))
     hinge_idx += len(EXTRA_DOFS_BEFORE)
     for offset, (name, jtype, axis, rng, meaning) in enumerate(EXTRA_DOFS_AFTER, start=1):
+        # tilt and axial rotation pivot about the centre of the trochlea
         talus.insert(hinge_idx + offset, ET.Element("joint", {
-            "name": name, "class": "talar_play_rot", "type": jtype, "pos": "0 0 0", "axis": axis, "range": rng}))
+            "name": name, "class": "talar_play_rot", "type": jtype, "pos": _fmt(axis_pt),
+            "axis": axis, "range": rng}))
 
     # ---- articular geometry -------------------------------------------------
-    a = ANKLE_AXIS / np.linalg.norm(ANKLE_AXIS)
+    a = axis_dir / np.linalg.norm(axis_dir)
     e2 = np.array([0.0, 1.0, 0.0]) - a[1] * a           # superior, perpendicular to the axis
     e2 /= np.linalg.norm(e2)
     e1 = np.cross(e2, a)                                 # anterior, perpendicular to the axis
-    R = _p("plafond_radius")
+    centre = talus_pos + axis_pt                         # trochlea centre in the tibia frame
+    R = plafond_radius(mesh_dir, centre, a)
     hw = _p("trochlea_half_width")
     gap = _p("clearance")
     plate_t = 0.001                                      # plate half-thickness
 
-    # Talar trochlea: cylinder on the ankle axis (talus frame origin is on the axis).
+    # Talar trochlea: cylinder on the ankle axis.
     first_body = next((i for i, c in enumerate(talus) if c.tag == "body"), len(talus))
     talus.insert(first_body, ET.Element("geom", {
         "name": "talar_trochlea_r", "class": "cartilage", "type": "cylinder",
-        "size": f"{R - gap:.6g}", "fromto": _fmt(np.r_[-hw * a, hw * a]),
+        "size": f"{R - gap:.6g}", "fromto": _fmt(np.r_[axis_pt - hw * a, axis_pt + hw * a]),
         "contype": "2", "conaffinity": "0"}))
 
     # Tibial plafond: plates tangent to a coaxial arc; malleolar facets: plates
     # normal to the axis. All in the tibia frame, centred on the axis point.
-    centre = talus_pos
     first_body = next((i for i, c in enumerate(tibia) if c.tag == "body"), len(tibia))
     geoms = []
     n = int(_p("plafond_plates"))

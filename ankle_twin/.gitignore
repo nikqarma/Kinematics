@@ -1,3 +1,5 @@
 .venv/
 __pycache__/
 MUJOCO_LOG.TXT
+# alternative builds; regenerate with build_ankle_model.py (model/ is the committed default build)
+model_*/

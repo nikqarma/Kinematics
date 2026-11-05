@@ -27,7 +27,10 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import mujoco
+import numpy as np
 
+import ankle_axis as AX
+import couplings as CPL
 import ligaments as LIG
 import talocrural as TC
 
@@ -66,8 +69,14 @@ def _fmt(v) -> str:
 
 
 def add_ligaments(model: ET.Element, femur: ET.Element, mesh_dir: Path) -> None:
-    """Add attachment sites and tension-only ligament tendons (slack length set later)."""
+    """Add attachment sites and tension-only ligament tendons (slack lengths and stiffness set later)."""
     bodies = {b.get("name"): b for b in femur.iter("body")}
+    # The attachment code places some insertions via the tibia frame; make sure
+    # its body offsets still match the source model.
+    talus_pos = np.array([float(c) for c in bodies["talus_r"].get("pos").split()])
+    calcn_pos = np.array([float(c) for c in bodies["calcn_r"].get("pos").split()])
+    assert np.allclose(LIG.BODY_ORIGIN_IN_TIBIA["talus_r"], talus_pos, atol=1e-6), "talus offset changed"
+    assert np.allclose(LIG.BODY_ORIGIN_IN_TIBIA["calcn_r"], talus_pos + calcn_pos, atol=1e-6), "calcn offset changed"
     pts = LIG.attachments(mesh_dir)
 
     default = model.find("default")
@@ -76,9 +85,13 @@ def add_ligaments(model: ET.Element, femur: ET.Element, mesh_dir: Path) -> None:
                   damping=f"{LIG.LIGAMENT_DAMPING:g}")
     ET.SubElement(lig_default, "site", size="0.0025", rgba="0.35 0.75 0.95 1", group="4")
 
+    seg_default = ET.SubElement(default, "default", {"class": "ligament_segment"})
+    ET.SubElement(seg_default, "tendon", width="0.001", rgba="0 0 0 0", damping="0")
+
     tendon = model.find("tendon")
     tendon.append(ET.Comment(
-        " Ankle ligaments: tension-only linear springs (springlength deadband). "
+        " Ankle ligaments: tension-only springs (springlength deadband). Exponential force-strain "
+        "curves are stacks of parallel springs (<name>__sN) with staggered deadbands. "
         "Parameters and sources in ligaments.py "))
     for lig in LIG.LIGAMENTS:
         p1, p2 = pts[lig.name]
@@ -89,36 +102,48 @@ def add_ligaments(model: ET.Element, femur: ET.Element, mesh_dir: Path) -> None:
             b.insert(first_child, ET.Element("site", {"name": f"{lig.name}-{tag}", "class": "ligament",
                                                        "pos": _fmt(p)}))
         onset = " / ".join(f"{a:+g}" for a in lig.taut_ankle_deg)
+        if lig.curve[0] == "linear":
+            law = f"linear k={lig.curve[1] / 1000:.1f} N/mm"
+            n_seg = 1
+        else:
+            law = f"T = {lig.curve[1]:g}*(exp({lig.curve[2]:g}*strain)-1) N"
+            n_seg = len(LIG.EXP_BREAKS)
         tendon.append(ET.Comment(
-            f" {lig.full_name}: k={lig.stiffness / 1000:.1f} N/mm ({lig.stiffness_source}); "
+            f" {lig.full_name}: {law} ({lig.stiffness_source}); "
             f"taut from {onset} deg ankle ({lig.taut_source}) "))
-        sp = ET.SubElement(tendon, "spatial", {"name": lig.name, "class": "ligament",
-                                               "stiffness": f"{lig.stiffness:g}",
-                                               "springlength": "0 0"})
-        ET.SubElement(sp, "site", site=f"{lig.name}-P1")
-        ET.SubElement(sp, "site", site=f"{lig.name}-P2")
+        for j in range(n_seg):
+            name, cls = (lig.name, "ligament") if j == 0 else (f"{lig.name}__s{j}", "ligament_segment")
+            sp = ET.SubElement(tendon, "spatial", {"name": name, "class": cls,
+                                                   "stiffness": "0", "springlength": "0 0"})
+            ET.SubElement(sp, "site", site=f"{lig.name}-P1")
+            ET.SubElement(sp, "site", site=f"{lig.name}-P2")
 
 
 def set_slack_lengths(xml_path: Path) -> dict[str, float]:
-    """Set each slack length to the longest length over the ligament's taut-onset ankle angles."""
+    """Set each slack length L0 to the longest length over the ligament's taut-onset ankle angles,
+    then each spring segment's deadband start (L0 * (1 + strain_j)) and stiffness."""
     m = mujoco.MjModel.from_xml_path(str(xml_path))
     d = mujoco.MjData(m)
     slack = {}
     for lig in LIG.LIGAMENTS:
         lengths = []
         for angle in lig.taut_ankle_deg:
-            d.qpos[:] = m.qpos0
-            d.qpos[m.joint("ankle_angle_r").qposadr[0]] = math.radians(angle)
-            mujoco.mj_kinematics(m, d)
-            mujoco.mj_comPos(m, d)
-            mujoco.mj_tendon(m, d)
+            CPL.pose(m, d, {"ankle_angle_r": math.radians(angle)}, forward=False)
             lengths.append(float(d.ten_length[m.tendon(lig.name).id]))
         slack[lig.name] = max(lengths)
 
+    springs = {}
+    for lig in LIG.LIGAMENTS:
+        L0 = slack[lig.name]
+        for j, (strain, k) in enumerate(LIG.spring_segments(lig, L0)):
+            springs[lig.name if j == 0 else f"{lig.name}__s{j}"] = (L0 * (1 + strain), k)
+
     tree = ET.parse(xml_path)
     for sp in tree.getroot().find("tendon").iter("spatial"):
-        if sp.get("name") in slack:
-            sp.set("springlength", f"0 {slack[sp.get('name')]:.6g}")
+        if sp.get("name") in springs:
+            start, k = springs[sp.get("name")]
+            sp.set("springlength", f"0 {start:.6g}")
+            sp.set("stiffness", f"{k:.6g}")
     header = xml_path.read_text(encoding="utf-8").split("\n", 2)
     ET.indent(tree.getroot(), space="  ")
     xml_path.write_text(header[0] + "\n" + header[1] + "\n" + ET.tostring(tree.getroot(), encoding="unicode") + "\n",
@@ -126,8 +151,41 @@ def set_slack_lengths(xml_path: Path) -> dict[str, float]:
     return slack
 
 
+def set_ankle_axis(model: ET.Element, femur: ET.Element, kind: str, mesh_dir: Path,
+                   swing_deg: float = AX.SWING_DEG) -> None:
+    """Point the talocrural hinge at the chosen axis (see ankle_axis.py). The neutral pose is unchanged.
+
+    For the moving axis, a second hinge (ankle_axis_tilt_r) about the inferior
+    direction (perpendicular to the axis) through the same centre is added after the flexion hinge and
+    coupled to it by tilt = c * flexion**2.
+    """
+    talus = next(b for b in femur.iter("body") if b.get("name") == "talus_r")
+    joint = next(j for j in talus.iter("joint") if j.get("name") == "ankle_angle_r")
+    point, u = AX.axis(kind, mesh_dir)
+    joint.set("pos", _fmt(point))
+    joint.set("axis", _fmt(u))
+    if kind != "moving":
+        return
+    lo, hi = (float(v) for v in joint.get("range").split())
+    m_axis, c = AX.moving_axis_coupling(u, (lo, hi), swing_deg)
+    idx = list(talus).index(joint)
+    # Range is a guard only: the coupling keeps |tilt| <= c * max(q^2) ~ 0.06 rad.
+    talus.insert(idx + 1, ET.Element("joint", {
+        "name": "ankle_axis_tilt_r", "class": "ankle", "pos": _fmt(point), "axis": _fmt(m_axis),
+        "range": "-0.3 0.3"}))
+    equality = model.find("equality")
+    equality.append(ET.Comment(
+        f" Moving talocrural axis (ankle_axis.py): tilt = {c:.6g} * flexion^2 gives a "
+        f"{swing_deg:g} deg change in coronal inclination across the flexion range "))
+    ET.SubElement(equality, "joint", name="ankle_axis_coupling", joint1="ankle_axis_tilt_r",
+                  joint2="ankle_angle_r", polycoef=f"0 0 {c:.6g} 0 0", solimp="0.9999 0.9999")
+
+
 def build(src: Path, out_dir: Path, knee_angle_deg: float | None, ligaments: bool = True,
-          six_dof: bool = False) -> Path:
+          six_dof: bool = False, axis: str = "moving", swing_deg: float = AX.SWING_DEG) -> Path:
+    if six_dof and axis == "moving":
+        raise ValueError("the 6-DOF contact joint needs a fixed axis (its trochlea is a cylinder about it): "
+                         "use axis='inman' or 'original'")
     main = load(src / "MS-Human-700.xml")
     leg = load(src / "Body_Primary" / "Body_Leg_Foot_r.xml")
     tendons_src = load(src / "Tendon" / "Tendon_Leg_r.xml")
@@ -226,17 +284,19 @@ def build(src: Path, out_dir: Path, knee_angle_deg: float | None, ligaments: boo
     for m in MESHES:
         shutil.copy2(src / "Geometry" / f"{m}.stl", mesh_dir / f"{m}.stl")
 
+    set_ankle_axis(model, femur, axis, mesh_dir, swing_deg)
     if ligaments:
         add_ligaments(model, femur, mesh_dir)
     if six_dof:
-        TC.add_joint(model, femur)
+        TC.add_joint(model, femur, mesh_dir)
 
     ET.indent(model, space="  ")
     knee = "free" if knee_angle_deg is None else f"locked at {knee_angle_deg:g} deg"
     header = (
         "<!-- Generated by build_ankle_model.py from MS-Human-700 (Apache-2.0).\n"
         f"     Knee: {knee}. Ligaments: {'yes' if ligaments else 'no'}."
-        f" Talocrural joint: {'6-DOF with contact' if six_dof else '1-DOF hinge'}."
+        f" Talocrural joint: {'6-DOF with contact' if six_dof else '1-DOF hinge'}, {axis} axis"
+        + (f" ({swing_deg:g} deg swing)" if axis == "moving" else "") + "."
         " Do not edit by hand; edit the generator and rebuild. -->\n"
     )
     out = out_dir / "ankle_foot_r.xml"
@@ -258,11 +318,21 @@ def main() -> None:
     p.add_argument("--no-ligaments", action="store_true", help="omit the ankle ligaments")
     p.add_argument("--six-dof", action="store_true",
                    help="EXPERIMENTAL: 6-DOF talocrural joint with articular contact (see talocrural.py)")
+    p.add_argument("--axis", choices=AX.KINDS, default=None,
+                   help="talocrural axis (see ankle_axis.py): 'moving' = Inman axis at neutral whose "
+                        "inclination varies with flexion (default); 'inman' = fixed Inman axis (default "
+                        "with --six-dof); 'original' = MS-Human-700's own axis")
+    p.add_argument("--swing-deg", type=float, default=AX.SWING_DEG,
+                   help=f"moving axis: total change in coronal inclination across the flexion range "
+                        f"(default {AX.SWING_DEG:g}, illustrative - see ankle_axis.py)")
     args = p.parse_args()
     if args.six_dof and args.no_ligaments:
         p.error("--six-dof needs the ligaments: without them nothing holds the talus in the mortise")
+    axis = args.axis or ("inman" if args.six_dof else "moving")
+    if args.six_dof and axis == "moving":
+        p.error("--six-dof needs a fixed axis (its trochlea is a cylinder about it): use --axis inman or original")
     out = build(args.src, args.out, None if args.free_knee else args.knee_angle,
-                ligaments=not args.no_ligaments, six_dof=args.six_dof)
+                ligaments=not args.no_ligaments, six_dof=args.six_dof, axis=axis, swing_deg=args.swing_deg)
     print(f"wrote {out}")
 
 

@@ -26,6 +26,18 @@ HEEL = np.array([0.0, 0.015, 0.0])        # posterior calcaneus, for drawer test
 SOLE_UNDER_ANKLE = np.array([0.049, -0.009, -0.008])  # plantar point under the talus
 
 
+def ligament_tendon_ids(m: mujoco.MjModel, name: str) -> list[int]:
+    """Tendon ids making up one ligament: the base spring plus any '<name>__sN' segments."""
+    return [i for i in range(m.ntendon)
+            if m.tendon(i).name == name or m.tendon(i).name.startswith(name + "__s")]
+
+
+def ligament_force(m: mujoco.MjModel, d: mujoco.MjData, name: str) -> float:
+    """Total elastic tension (N) in a ligament, summed over its spring segments."""
+    ids = ligament_tendon_ids(m, name)
+    return float(np.sum(m.tendon_stiffness[ids] * np.maximum(0.0, d.ten_length[ids] - m.tendon_lengthspring[ids, 1])))
+
+
 class Bench:
     def __init__(self, xml: str | Path, gravity: bool = False):
         spec = mujoco.MjSpec.from_file(str(xml))
@@ -68,8 +80,9 @@ class Bench:
     def cut(self, *ligaments: str) -> None:
         """Section ligaments (zero their stiffness)."""
         for n in ligaments:
-            self.m.tendon_stiffness[self.m.tendon(n).id] = 0.0
-            self.m.tendon_damping[self.m.tendon(n).id] = 0.0
+            ids = ligament_tendon_ids(self.m, n)
+            self.m.tendon_stiffness[ids] = 0.0
+            self.m.tendon_damping[ids] = 0.0
 
     def settle(self, seconds: float, heel_force=None, sole_force=None, foot_torque=None,
                ankle_ramp_deg: tuple[float, float] | None = None, ctrl: dict[str, float] | None = None) -> bool:
@@ -101,6 +114,12 @@ class Bench:
     def q(self, joint: str) -> float:
         return float(self.d.qpos[self.m.joint(joint).qposadr[0]])
 
+    def site_in_tibia(self, site: str) -> np.ndarray:
+        """Current position (m) of a site expressed in the tibia frame."""
+        tib = self.m.body("tibia_r").id
+        R = self.d.xmat[tib].reshape(3, 3)
+        return R.T @ (self.d.site_xpos[self.m.site(site).id] - self.d.xpos[tib])
+
     def has_joint(self, joint: str) -> bool:
         try:
             self.m.joint(joint)
@@ -113,9 +132,7 @@ class Bench:
         return dict(zip(LIGAMENTS, self.d.ten_length[self.lig_ids] / L0 - 1))
 
     def ligament_forces(self) -> dict[str, float]:
-        L0 = self.m.tendon_lengthspring[self.lig_ids, 1]
-        k = self.m.tendon_stiffness[self.lig_ids]
-        return dict(zip(LIGAMENTS, k * np.maximum(0.0, self.d.ten_length[self.lig_ids] - L0)))
+        return {n: ligament_force(self.m, self.d, n) for n in LIGAMENTS if self._has_tendon(n)}
 
     def contact(self) -> tuple[float, float]:
         """(total normal contact force in the talocrural joint N, deepest penetration m)."""
