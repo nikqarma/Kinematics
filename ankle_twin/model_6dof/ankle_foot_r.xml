@@ -160,6 +160,8 @@
             <site name="PTFL_r-P2" class="ligament" pos="-0.015336 -0.001709 -0.00502" />
             <site name="dATTL_r-P2" class="ligament" pos="0.0233135 -0.00110778 -0.0132441" />
             <site name="dPTTL_r-P2" class="ligament" pos="0.0106798 0.00179744 -0.0109777" />
+            <site name="CL_r-P1" class="ligament" pos="0.011014 -0.007763 0.016441" />
+            <site name="ITCL_r-P1" class="ligament" pos="0.008875 -0.006587 -0.007593" />
             <geom name="talar_trochlea_r" class="cartilage" type="cylinder" size="0.0219125" fromto="0.0118676 0.00166874 -0.0142777 0.00161841 -0.00640772 0.0104957" contype="2" conaffinity="0" />
             <body name="calcn_r" pos="-0.04877 -0.04195 0.00792">
               <inertial pos="0.0719814 0.0149052 -0.00451819" quat="0.50446 0.527653 0.478662 0.487836" mass="0.617" diaginertia="0.00170169 0.00155667 0.000289061" />
@@ -195,6 +197,8 @@
               <site name="TNL_r-P2" class="ligament" pos="0.085433 0.034545 -0.039235" />
               <site name="TSL_r-P2" class="ligament" pos="0.0731602 0.0372006 -0.0241124" />
               <site name="TCL_r-P2" class="ligament" pos="0.0606225 0.0273378 -0.0202203" />
+              <site name="CL_r-P2" class="ligament" pos="0.066734 0.02553 0.013786" />
+              <site name="ITCL_r-P2" class="ligament" pos="0.064011 0.030976 -0.008106" />
               <body name="toes_r" pos="0.1788 -0.002 0.00108">
                 <inertial pos="0.0216583 -0.00127638 0.00916254" quat="0.284517 0.669148 0.621977 0.290576" mass="0.081" diaginertia="9.61956e-05 7.66346e-05 2.30377e-05" />
                 <joint name="mtp_angle_r" class="toe" pos="0 0 0" axis="0.580954 0 -0.813936" range="-0.5 0.5" />
@@ -404,6 +408,14 @@
     <spatial name="dPTTL_r__s5" class="ligament_segment" stiffness="15620.5" springlength="0 0.0113296">
       <site site="dPTTL_r-P1" />
       <site site="dPTTL_r-P2" />
+    </spatial>
+    <spatial name="CL_r" class="ligament" stiffness="63900" springlength="0 0.0122868">
+      <site site="CL_r-P1" />
+      <site site="CL_r-P2" />
+    </spatial>
+    <spatial name="ITCL_r" class="ligament" stiffness="150000" springlength="0 0.0107068">
+      <site site="ITCL_r-P1" />
+      <site site="ITCL_r-P2" />
     </spatial>
   </tendon>
   <actuator>

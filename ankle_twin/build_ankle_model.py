@@ -59,6 +59,18 @@ KNEE_COUPLED = [
 MOUNT_QUAT = "0.707107 0.707107 0 0"
 MOUNT_HEIGHT = 1.0  # m; puts the foot clear of the (visual-only) floor.
 
+# Subtalar range (rad, + = inversion): MS-Human-700's hard stop at +-0.34 rad
+# (19.5 deg), kept on purpose. Before the cervical and interosseous ligaments
+# were added, every inversion test ended on this stop. With them, the intact
+# joint stays well inside it under clinical torques, and the stop now acts as
+# what is left once the intrinsic ligaments are gone - the articular surfaces
+# and capsule of the talocalcaneonavicular joint, which the model has no other
+# representation of. Choisne 2013 (manual end range, n=9): 13.5 +/- 3.5 deg
+# intact, 17.7 +/- 4.3 deg with CFL + cervical + ITCL cut; eversion 8.6 +/- 3.7.
+# A 40 deg guard was tried: with CFL + cervical + ITCL cut the joint then ran to
+# the guard at 2 N*m, i.e. nothing else in the model limits it.
+SUBTALAR_RANGE = (-0.34, 0.34)
+
 
 def load(path: Path) -> ET.Element:
     return ET.parse(path).getroot()
@@ -128,7 +140,7 @@ def set_slack_lengths(xml_path: Path) -> dict[str, float]:
     for lig in LIG.LIGAMENTS:
         lengths = []
         for angle in lig.taut_ankle_deg:
-            CPL.pose(m, d, {"ankle_angle_r": math.radians(angle)}, forward=False)
+            CPL.pose(m, d, {lig.taut_joint: math.radians(angle)}, forward=False)
             lengths.append(float(d.ten_length[m.tendon(lig.name).id]))
         slack[lig.name] = max(lengths)
 
@@ -287,6 +299,8 @@ def build(src: Path, out_dir: Path, knee_angle_deg: float | None, ligaments: boo
     set_ankle_axis(model, femur, axis, mesh_dir, swing_deg)
     if ligaments:
         add_ligaments(model, femur, mesh_dir)
+        subtalar = next(j for j in femur.iter("joint") if j.get("name") == "subtalar_angle_r")
+        subtalar.set("range", _fmt(SUBTALAR_RANGE))
     if six_dof:
         TC.add_joint(model, femur, mesh_dir)
 

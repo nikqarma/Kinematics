@@ -66,6 +66,22 @@ rotation or anterior translation.
   comes before any further onset tuning.
 - The two-band ATFL is deferred until there is per-band data.
 
+### Subtalar step (2026-11-05): the diagnosis above was only partly right
+
+- Adding the cervical ligament (CL) and the ITCL took the intact subtalar joint off its stop: at 5.7 N·m and neutral
+  it sits at 7.8 deg, where it used to sit on the 19.5 deg stop.
+- **The CFL did not unload: 227 N, was 238 N.** The inversion moved into talar tilt instead (7.9 -> 13.4 deg).
+- Choisne 2013 measured the opposite split in cadavers: subtalar 13.5 deg, talar 3.4 deg. So the CFL overload comes
+  from too-lax talar tilt. At neutral the CFL is the only tilt restraint: the ATFL is slack (Ozeki onset), there is no
+  capsule, and the medial facet is a thin rim. The subtalar joint was not the cause.
+- **What is next:** restrain talar tilt. Candidate fixes are anatomical facet and capsule restraint, or a two-band
+  ATFL whose inferior band is taut near neutral.
+- The subtalar stop (+/-19.5 deg) is kept. With the intrinsic ligaments cut, Choisne measured 17.7 +/- 4.3 deg, so the
+  stop now models what is left: articular surfaces and capsule. A trial with a 40 deg guard ran to the guard at 2 N·m
+  once the CFL, CL and ITCL were cut.
+- Open: the CL is taut from subtalar neutral, an assumption, and reaches its 163.5 N failure load at about 13 deg
+  subtalar inversion, i.e. normal end range. It needs a zero-strain onset that has not been found.
+
 ## 2. Validation targets for inversion
 
 **Bahr 1997** (Acta Orthop Scand 68(5):435-441, **read**). 8 cadavers. Ligament force by buckle
@@ -81,6 +97,48 @@ is free in AP and ML translation.
 
 Mean (SE). Cutting the ATFL adds about 2 mm anterior translation in PF. Also cutting the CFL adds 2-4 mm more,
 and supination increases significantly. Motion magnitudes are in bar charts only (Figs 3 and 4).
+
+**Colville 1990** (Am J Sports Med 18(2):196-200, **read**; the PDF stays local in `literature/`):
+- **Specimens and setup:** 10 cadaver ankles. The subtalar joint was fixed with two Schanz screws.
+- **Gauges:** mercury strain gauges at midsubstance, zeroed at each ligament's most lax position. Only the long PTFL
+  fibres were gauged, and the whole ATFL (no per-band data).
+- **Protocol:** the ankle was swept from 20 DF to 30 PF, unloaded and with 3 N·m inversion, eversion, internal and
+  external rotation moments on the talus.
+- **ATFL:** +15% over the 50 deg range, steepest between neutral and 20 PF. Inversion and internal rotation increase it
+  at every angle, most in PF. Eversion and external rotation decrease it.
+- **CFL:** decreases from 20 DF to about 20 PF, then rises slightly. Inversion and external rotation increase it at all
+  angles. Strains stay low.
+- **PTFL:** increases toward both ends of the range. External rotation increases it; inversion slightly decreases it.
+- **Figure scale caveat:** the printed y-axis ticks do not fit the text. Read with the tick spacing, the ATFL rise is
+  about 10%, but the text says 15%. Treat the figures as trend data.
+
+**Choisne 2013** (ISB congress abstract, Table 1, **read**). 9 specimens, manual inversion to end range (torque not
+reported). Mean (SD), deg:
+
+| | Subtalar inversion | Subtalar eversion | Talocrural inversion |
+|---|---|---|---|
+| Intact, neutral | 13.46 (3.48) | 8.55 (3.74) | 3.43 (3.08) |
+| Intact, DF | 10.31 (2.91) | 8.18 (1.84) | 1.85 (1.56) |
+| Intact, PF | 12.16 (2.94) | 4.31 (1.73) | 3.35 (1.72) |
+| CFL cut, neutral | 15.18 (3.81) | 9.52 (3.94) | 8.22 (4.68) |
+| CFL + cervical + ITCL cut, neutral | 17.73 (4.29) | 9.12 (3.43) | 8.64 (5.44) |
+
+**Subtalar ligament material** (Michels 2022, Foot Ankle Surg 28:1014, abstract, 18 pairs):
+
+| Ligament | Stiffness (N/mm) | Failure load (N) |
+|---|---|---|
+| CFL | 55.8 +/- 23.0 | 320.4 +/- 122.0 |
+| CL | 63.9 +/- 38.0 | 163.5 +/- 58.0 |
+| ACaL-ITCL complex | 150 +/- 51 | 382.5 +/- 158 |
+
+The CFL values sit close to Rochelle 2020's, which the model keeps.
+
+**Subtalar ligament anatomy:** Poonja 2017 (Cureus 9:e1382, full text, n=26).
+- **CL dimensions:** height 8.3 (anterior) / 14.0 (posterior) mm; width 9.2 (superior) / 11.9 (inferior) mm;
+  thickness about 1 mm.
+- **ITCL:** no numbers. Its fibres run superomedial to inferolateral across the full width of the sinus.
+- **Other sources:** Jotoku 2006 (Foot Ankle Int 27:533) has dimensions but was not accessible. Tochigi 2004 (n=6,
+  abstract): the ITCL keeps the joint apposed and resists lateral-to-medial drawer.
 
 **Sprain-event kinematics:** Lysdal 2022 review (24 cases). Mean peak inversion about 67.5 deg; peak
 inversion velocity about 974 deg/s; mean over the event about 337 deg/s (range 117-1400). Inversion is
@@ -100,7 +158,14 @@ Dissected lengths 12.6 / 20.0 / 13.4 mm. No failure strain was reported.
 | Chapman 2019 (UCLan) | read | Rate-matched stiffness and failure |
 | Takeuchi 2021, BMC Musculoskelet Disord 22:208 (MLPP) | read | ATFL strain normalised to max; peaks in inversion; tenses about 20 deg PF |
 | Renstrom 1988, Foot Ankle 9:59-63 | abstract | ATFL +3.3% from 10 DF to 40 PF; CFL isometric |
-| Colville 1990, Am J Sports Med 18(2):196-200 | **paywalled** | ATFL/CFL/PTFL strain vs flexion, inversion and IR (10 cadavers) |
+| Colville 1990, Am J Sports Med 18(2):196-200 | read (user-supplied PDF, kept local) | ATFL/CFL/PTFL strain vs flexion, inversion and IR (10 cadavers); whole-ATFL only |
+| Choisne 2013, ISB congress abstract | read | Subtalar vs talocrural inversion, intact and after CFL/CL/ITCL sectioning |
+| Michels 2022, Foot Ankle Surg 28:1014 | abstract | CL and ACaL-ITCL stiffness and failure |
+| Poonja 2017, Cureus 9:e1382 | read | Cervical ligament dimensions |
+| Tochigi 2004, Foot Ankle Int 25:588 | abstract | ITCL function (drawer, distraction) |
+| Jotoku 2006, Foot Ankle Int 27:533 | **paywalled** | ITCL and anterior capsular ligament dimensions |
+| Kjaersgaard-Andersen 1988, Am J Sports Med 16:512 | abstract | Hindfoot ROM after CL/ITCL sectioning (max +2.6 deg) |
+| Choisne 2012, J Biomech 45:46-52 | not reached | Subtalar/ankle kinematics method; likely has applied torques |
 | Bahr 1998, KSSTA 6:115-121 | **paywalled** | ATFL/CFL force across positions with 375 N compression |
 | Funk 2000, J Biomech Eng 122(1):15-22 | **paywalled** (core.ac.uk copy blocked) | QLV (rate-dependent) curves for all 8 ankle ligaments |
 | Siegler 1988, Foot Ankle 8(5):234-242 | **paywalled** | Failure strain and load, 120 ligaments |

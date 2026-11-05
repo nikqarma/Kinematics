@@ -51,6 +51,9 @@ LIGAMENT_FUNCTION = {
     "TCL_r":   (None,  -1),     # resists eversion; tenses into DF (Takao 2020), see note
     "dATTL_r": (-1,    None),   # taut in plantarflexion
     "dPTTL_r": (None,  None),   # taut in dorsiflexion anatomically; see note (axis registration)
+    "CL_r":    (None,  +1),     # cervical: limits inversion (sinus tarsi opens in inversion)
+    "ITCL_r":  (None,  None),   # sources disagree (inversion: Tochigi 2004; eversion: classic canal-ligament
+                                # descriptions); with this geometry it lengthens in eversion - see README
 }
 
 # Ligaments that should tighten in dorsiflexion according to the cited
@@ -274,7 +277,7 @@ def check_six_dof(xml: Path) -> None:
           f"unloaded under gravity: talus stays seated (max translation {tr * 1e3:.2f} mm)",
           known_reason=("with Ozeki 2002 onsets the lateral ligaments are slack in the hanging foot, while the deep "
                         "anterior deltoid (onset assumed at neutral) is not: it shifts the talus medially; "
-                        "no capsule or subtalar ligaments in the model (README)") if ok and tr < 1.0e-3 else None)
+                        "no joint capsule in the model (README)") if ok and tr < 1.0e-3 else None)
     rig, ok = run(sole_force=[0, 0, 700])
     fn, pen = rig.contact()
     tr = max(abs(v) for v in talus(rig)[:3])
@@ -345,6 +348,8 @@ def check_six_dof(xml: Path) -> None:
           f"({deg(t0):.1f} -> {deg(t1):.1f} -> {deg(t2):.1f} deg)")
 
     check_bahr1997(xml)
+    check_choisne2013(xml)
+    check_colville1990(xml)
 
     # (c) strain through flexion, for comparison with the hinge (section 4)
     print("\n  Ligament strain (%) driving the ankle with the subtalar held at 0 (talus free to settle):")
@@ -410,6 +415,88 @@ def check_bahr1997(xml: Path) -> None:
           f"({a[0]:.0f} N at 10 DF -> {a[-1]:.0f} N at 20 PF; Bahr 26 -> 123 N)")
     check(c[0] > c[-1], f"talar tilt: CFL takes more load in dorsiflexion than plantarflexion "
           f"({c[0]:.0f} N at 10 DF -> {c[-1]:.0f} N at 20 PF; Bahr 123 -> 32 N)")
+
+
+# Choisne et al. (2013) ISB congress abstract, Table 1 (n=9, barefoot, manual
+# inversion to end range; mean, SD in deg): subtalar and talocrural inversion,
+# intact and with CFL + cervical + ITCL cut.
+CHOISNE2013 = {"intact": {"subtalar": (13.46, 3.48), "talar": (3.43, 3.08)},
+               "CFL+CL+ITCL cut": {"subtalar": (17.73, 4.29), "talar": (8.64, 5.44)}}
+SUBTALAR_STOP_DEG = 19.5  # MS-Human-700 range, kept (build_ankle_model.SUBTALAR_RANGE)
+
+
+def check_choisne2013(xml: Path) -> None:
+    """Benchmark: how inversion splits between the subtalar joint and talar tilt.
+
+    Ankle held at neutral, subtalar and talar DOFs free, Bahr 1997's 5.7 N*m
+    supination torque on the foot. Choisne's torque was manual (not reported),
+    so magnitudes are indicative; the directions are asserted.
+    """
+    from bench import Bench
+    print("\n  Choisne 2013 benchmark (inversion at neutral, 5.7 N*m; Choisne mean +/- SD at manual end range):")
+    res = {}
+    for case, cuts in (("intact", ()), ("CFL+CL+ITCL cut", ("CFL_r", "CL_r", "ITCL_r"))):
+        rig = Bench(xml)
+        rig.cut(*cuts)
+        rig.hold(0, None)
+        ok = rig.settle(1.5, foot_torque=[5.7, 0, 0])
+        sub, tilt = np.degrees(rig.q("subtalar_angle_r")), np.degrees(rig.q("talus_tilt_r"))
+        res[case] = (sub, tilt)
+        ref = CHOISNE2013[case]
+        print(f"  {case:<17} subtalar {sub:5.1f} deg (Choisne {ref['subtalar'][0]:.1f} +/- {ref['subtalar'][1]:.1f})"
+              f"   talar tilt {tilt:5.1f} deg (Choisne {ref['talar'][0]:.1f} +/- {ref['talar'][1]:.1f})"
+              + ("" if ok else "  UNSTABLE"))
+    (s0, t0), (s1, t1) = res["intact"], res["CFL+CL+ITCL cut"]
+    check(s0 < SUBTALAR_STOP_DEG - 0.5, f"intact subtalar inversion is set by ligaments, not the joint stop "
+          f"({s0:.1f} deg, stop {SUBTALAR_STOP_DEG} deg)")
+    check(s1 > s0 + 2, f"cutting CFL + cervical + ITCL increases subtalar inversion ({s0:.1f} -> {s1:.1f} deg; "
+          "Choisne 13.5 -> 17.7)")
+    check(s0 > t0, f"most hindfoot inversion occurs at the subtalar joint (subtalar {s0:.1f} vs talar tilt "
+          f"{t0:.1f} deg; Choisne 13.5 vs 3.4)",
+          known_reason="talar tilt is too lax in the 6-DOF joint: at neutral only the CFL resists it (ATFL slack "
+                       "until 16 deg PF, no capsule, medial facet reduced to avoid jamming); README limitation 8")
+
+
+# Colville et al. (1990) Am J Sports Med 18:196-200: midsubstance strain gauges,
+# subtalar joint fixed with screws, 3 N*m moments on the talus, ankle swept from
+# 20 DF to 30 PF (Figs 1-3). Directions read from the text and figures.
+def check_colville1990(xml: Path) -> None:
+    """Benchmark: lateral-ligament length change with flexion, inversion and internal rotation (subtalar locked)."""
+    from bench import Bench
+    names = ("ATFL_r", "CFL_r", "PTFL_r")
+    angles = (20, 10, 0, -10, -20, -30)
+    loads = {"none": {}, "inv 3": dict(foot_torque=[3, 0, 0]), "IR 3": dict(foot_torque=[0, 0, 3])}
+    L = {}
+    for ang in angles:
+        for key, ld in loads.items():
+            rig = Bench(xml)
+            rig.hold(ang, 0)
+            rig.settle(1.5, **ld)
+            L0 = rig.m.tendon_lengthspring[[rig.m.tendon(n).id for n in names], 1]
+            L[ang, key] = (np.array([rig.d.ten_length[rig.m.tendon(n).id] for n in names]) / L0 - 1) * 100
+    print("\n  Colville 1990 benchmark (subtalar locked; signed length change, % of slack length):")
+    print(f"  {'ankle':>6}" + "".join(f"{n[:-2] + ' ' + k:>13}" for n in names for k in loads))
+    for ang in angles:
+        print(f"  {ang:+6d}" + "".join(f"{L[ang, k][i]:13.1f}" for i in range(3) for k in loads))
+    d_inv = np.array([L[a, "inv 3"] - L[a, "none"] for a in angles])
+    d_ir = np.array([L[a, "IR 3"] - L[a, "none"] for a in angles])
+    check(L[-30, "none"][0] > L[20, "none"][0] + 2,
+          f"ATFL lengthens from 20 DF to 30 PF ({L[20, 'none'][0]:.1f} -> {L[-30, 'none'][0]:.1f}%; Colville +15%)")
+    dorsi = np.array([a > 0 for a in angles])
+    df_only = ("in dorsiflexion, where the ATFL is >10% below its slack length, the 6-DOF talus inverts/rotates "
+               "in a way that shortens it; not yet diagnosed (README limitation 8)")
+    for label, dd in (("inversion", d_inv), ("internal rotation", d_ir)):
+        bad = dd[:, 0] <= 0
+        check(not bad.any(), f"{label} lengthens the ATFL at every flexion angle (Colville; fails at "
+              f"{[a for a, b in zip(angles, bad) if b] or 'none'})",
+              known_reason=df_only if bad.any() and np.all(dorsi[bad]) else None)
+    check(np.all(d_inv[:, 1] > 0), "inversion lengthens the CFL at every flexion angle (Colville)")
+    check(L[20, "none"][1] > L[-20, "none"][1],
+          f"CFL is longer at 20 DF than at 20 PF ({L[20, 'none'][1]:.1f} vs {L[-20, 'none'][1]:.1f}%; Colville)",
+          known_reason="the CFL is near-isometric over flexion on the Inman axes and slackens in DF on the "
+                       "original axis (README limitation 2)")
+    print(f"  PTFL change with inversion {d_inv[:, 2].min():+.1f} to {d_inv[:, 2].max():+.1f}% "
+          f"(Colville: decreases slightly)")
 
 
 def instantaneous_axis(m: mujoco.MjModel, d: mujoco.MjData, q: float, h: float = 1e-4) -> np.ndarray:

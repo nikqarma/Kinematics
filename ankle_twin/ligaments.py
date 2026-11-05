@@ -52,6 +52,17 @@ REFS = {
                  "(Hokkaido Univ. 2002) - journal tables not yet checked",
     "Bahr1997": "Bahr R. et al. (1997) Mechanics of the anterior drawer and talar tilt tests. Acta Orthop "
                 "Scand 68(5):435-441 (n=8, buckle transducers; Tables 2-3, read in full text)",
+    "Michels2022": "Michels F. et al. (2022) The different subtalar ligaments show significant differences in "
+                   "their mechanical properties. Foot Ankle Surg 28(7):1014-1020 (18 pairs, bone-ligament-bone "
+                   "uniaxial tests; abstract values - full text not yet checked)",
+    "Poonja2017": "Poonja A.J. et al. (2017) Anatomical study of the cervical and interosseous talocalcaneal "
+                  "ligaments of the foot with surgical relevance. Cureus 9(6):e1382 (n=26, formalin-fixed; "
+                  "full text)",
+    "Choisne2013": "Choisne J., Hoch M., Bawab S., Ringleb S.I. (2013) Effect of a semi-rigid ankle stabilizer "
+                   "on a simulated isolated subtalar joint instability. ISB 2013 congress abstract, Table 1 "
+                   "(n=9, end-range manual inversion, intact / CFL cut / CFL+cervical+ITCL cut)",
+    "Colville1990": "Colville M.R. et al. (1990) Strain measurement in lateral ankle ligaments. Am J Sports "
+                    "Med 18(2):196-200 (n=10, subtalar fixed with screws, 3 N*m moments; full text)",
     "Siegler1988":"Siegler S., Block J., Schneck C.D. (1988) The mechanical characteristics of the "
                    "collateral ligaments of the human ankle joint. Foot Ankle 8:234-242; tibionavicular "
                    "stiffness 39.1 N/mm and failure load 120 N as cited by Shin J. et al. (2012) Ann "
@@ -76,15 +87,17 @@ class Ligament:
     # T(eps) = a * (exp(b * eps) - 1), eps relative to the slack length.
     curve: tuple
     stiffness_source: str
-    # Ankle angle(s) (+ dorsiflexion) at which the ligament is reported to become
-    # taut. The slack length is the longest model length over these angles, so
-    # the ligament is slack between them and taut beyond the first one reached.
+    # Angle(s) of taut_joint (ankle: + dorsiflexion; subtalar: + inversion) at
+    # which the ligament is reported to become taut. The slack length is the
+    # longest model length over these angles, so the ligament is slack between
+    # them and taut beyond the first one reached.
     taut_ankle_deg: tuple[float, ...]
     taut_source: str
     failure_load: float | None = None  # N
     notes: str = ""
     reference_length: float | None = None  # m, published centre-to-centre length at neutral
     reference_source: str = "Campbell2014"
+    taut_joint: str = "ankle_angle_r"
 
 
 TNL_K = 39.1e3  # N/m, Siegler1988 (secondary)
@@ -139,6 +152,27 @@ LIGAMENTS = [
              notes="with Campbell2014 geometry this band lies anterior of the model's ankle axis and "
                    "so slackens in dorsiflexion - the model's axis sits ~7 mm posterior and ~8 mm "
                    "inferior of the intercollicular groove"),
+    # ---- subtalar (sinus tarsi / tarsal canal) ----------------------------
+    # Without these, subtalar inversion was stopped only by the CFL and the hard
+    # +-19.5 deg joint limit: every inversion test ended on the limit. Taut
+    # onsets have no published zero-strain reference, so both are taut from
+    # subtalar neutral (an assumption).
+    Ligament("CL_r", "cervical (talocalcaneal)", "talus_r", "calcn_r",
+             ("linear", 63.9e3), "measured: Michels2022 (63.9 +/- 38.0 N/mm)", (0.0,),
+             "assumed: taut from subtalar neutral (no zero-strain data found)",
+             failure_load=163.5, reference_length=0.0111, reference_source="Poonja2017",
+             taut_joint="subtalar_angle_r",
+             notes="reference length = mean of Poonja2017's anterior (8.3 mm) and posterior (14.0 mm) "
+                   "heights of a near-vertical ligament"),
+    Ligament("ITCL_r", "interosseous talocalcaneal", "talus_r", "calcn_r",
+             ("linear", 150.0e3), "measured: Michels2022 (ACaL-ITCL complex, 150 +/- 51 N/mm)", (0.0,),
+             "assumed: taut from subtalar neutral (no zero-strain data found)",
+             failure_load=382.5, reference_length=0.0100, reference_source="placeholder",
+             taut_joint="subtalar_angle_r",
+             notes="no published length found (Jotoku 2006 not yet checked); 10 mm placeholder sets the "
+                   "insertion. Michels2022 tested it together with the anterior capsular ligament. With "
+                   "this geometry it lengthens in eversion (the model's subtalar axis runs through the "
+                   "talar body, not the sinus tarsi); sources disagree on its direction"),
 ]
 
 
@@ -326,6 +360,36 @@ def attachments(mesh_dir: Path) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     process = (tal[:, x] < -0.010) & (tal[:, y] < 0.0)
     gap = np.linalg.norm(tal + BODY_ORIGIN_IN_TIBIA["talus_r"] - ptfl_o, axis=1)
     pts["PTFL_r"] = (ptfl_o, _pick(tal, process, -np.abs(gap - ptfl_ref)))
+    # ---- Subtalar: sinus tarsi and tarsal canal --------------------------------
+    # Talar points in the talus frame; calcaneal candidates are expressed in the
+    # talus frame at neutral (calcn origin offset) to measure lengths, then
+    # returned in the calcn frame. The talus mesh has ~100 vertices, so these
+    # are approximate to a few millimetres.
+    calc_in_talus = BODY_ORIGIN_IN_TIBIA["calcn_r"] - BODY_ORIGIN_IN_TIBIA["talus_r"]
+    calc_t = foot + calc_in_talus
+    ref = {L.name: L.reference_length for L in LIGAMENTS}
+
+    def closest_length(p: np.ndarray, mask: np.ndarray, length: float) -> np.ndarray:
+        return _pick(calc_t, mask, -np.abs(np.linalg.norm(calc_t - p, axis=1) - length)) - calc_in_talus
+
+    underside = tal[:, y] < -0.005
+    # Cervical: talar origin on the inferolateral talar neck (most lateral
+    # underside vertex 8-20 mm anterior of the talar origin); calcaneal
+    # insertion on the anterolateral floor of the sinus tarsi - anterior,
+    # inferior and lateral of the origin (Poonja2017) - at the vertex whose
+    # length is closest to the reference length.
+    cl_o = _pick(tal, underside & (tal[:, x] > 0.008) & (tal[:, x] < 0.020), tal[:, z])
+    cl_mask = ((calc_t[:, x] > cl_o[x]) & (calc_t[:, x] < cl_o[x] + 0.012) & (calc_t[:, y] < cl_o[y] - 0.003)
+               & (calc_t[:, z] > cl_o[z] - 0.004) & (calc_t[:, z] < cl_o[z] + 0.008))
+    pts["CL_r"] = (cl_o, closest_length(cl_o, cl_mask, ref["CL_r"]))
+    # ITCL: talar origin in the sulcus tali (highest underside vertex under the
+    # neck, medial half of the canal); fibres run superomedial to inferolateral
+    # (Poonja2017), so the calcaneal insertion is lateral and inferior of it.
+    itcl_o = _pick(tal, underside & (tal[:, x] > 0.005) & (tal[:, x] < 0.012) & (np.abs(tal[:, z] + 0.0025) < 0.0075),
+                   tal[:, y])
+    itcl_mask = ((calc_t[:, x] > itcl_o[x] - 0.004) & (calc_t[:, x] < itcl_o[x] + 0.008)
+                 & (calc_t[:, y] < itcl_o[y] - 0.003) & (calc_t[:, z] > itcl_o[z] + 0.002))
+    pts["ITCL_r"] = (itcl_o, closest_length(itcl_o, itcl_mask, ref["ITCL_r"]))
     # ---- Deltoid: origins and insertions from Campbell2014 Table I ----------
     # Origins: Table I offsets from the inferior tip of the medial malleolus.
     # Insertions: origin + published length along the published orientation

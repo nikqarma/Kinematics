@@ -19,7 +19,7 @@ import mujoco
 import numpy as np
 
 HELD = ("ankle_angle_r", "subtalar_angle_r")
-LIGAMENTS = ("ATFL_r", "CFL_r", "PTFL_r", "TNL_r", "TSL_r", "TCL_r", "dATTL_r", "dPTTL_r")
+LIGAMENTS = ("ATFL_r", "CFL_r", "PTFL_r", "TNL_r", "TSL_r", "TCL_r", "dATTL_r", "dPTTL_r", "CL_r", "ITCL_r")
 
 # Points on the calcaneus/foot body (calcn_r frame: x anterior, y superior, z lateral).
 HEEL = np.array([0.0, 0.015, 0.0])        # posterior calcaneus, for drawer tests
