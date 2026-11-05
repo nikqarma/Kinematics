@@ -72,8 +72,8 @@ KNOWN_DISCREPANCIES = {
 AXIS_KIND = "original"
 
 
-def check(ok: bool, msg: str) -> None:
-    reason = KNOWN_DISCREPANCIES.get((msg, "inman" if AXIS_KIND in ("inman", "moving") else AXIS_KIND))
+def check(ok: bool, msg: str, known_reason: str | None = None) -> None:
+    reason = known_reason or KNOWN_DISCREPANCIES.get((msg, "inman" if AXIS_KIND in ("inman", "moving") else AXIS_KIND))
     if not ok and reason:
         print(f"  KNOWN {msg}\n        ({reason})")
         known.append(msg)
@@ -153,13 +153,13 @@ def check_ligaments(m: mujoco.MjModel, d: mujoco.MjData) -> None:
         check(max(errs) < 0.25, f"{n}: spring stack follows the published curve "
               f"{lig.curve[1]:g}*(exp({lig.curve[2]:g}e)-1) (max error {max(errs) * 100:.0f}% over 0.5-10% strain)")
 
-    # (a3) neutral-pose lengths of the deltoid bands vs Campbell 2014.
+    # (a3) neutral-pose lengths vs published in-situ lengths (Campbell 2014, Ozeki 2002).
     at(0.0)
     for lig in LIG.LIGAMENTS:
         if lig.reference_length:
             Lm = d.ten_length[m.tendon(lig.name).id]
             err = Lm / lig.reference_length - 1
-            print(f"  {lig.name:<8} length at neutral {Lm * 1000:5.1f} mm vs Campbell 2014 "
+            print(f"  {lig.name:<8} length at neutral {Lm * 1000:5.1f} mm vs {lig.reference_source:<12} "
                   f"{lig.reference_length * 1000:5.1f} mm ({err * 100:+.0f}%)")
 
     # (b) length trends match known ligament function.
@@ -269,8 +269,12 @@ def check_six_dof(xml: Path) -> None:
     # (a) seating
     rig, ok = run(ankle=None, gravity=True)
     tx, ty, tz, tilt, rot = talus(rig)
-    check(ok and max(abs(tx), abs(ty), abs(tz)) < 0.5e-3,
-          f"unloaded under gravity: talus stays seated (max translation {max(abs(tx), abs(ty), abs(tz)) * 1e3:.2f} mm)")
+    tr = max(abs(tx), abs(ty), abs(tz))
+    check(ok and tr < 0.5e-3,
+          f"unloaded under gravity: talus stays seated (max translation {tr * 1e3:.2f} mm)",
+          known_reason=("with Ozeki 2002 onsets the lateral ligaments are slack in the hanging foot, while the deep "
+                        "anterior deltoid (onset assumed at neutral) is not: it shifts the talus medially; "
+                        "no capsule or subtalar ligaments in the model (README)") if ok and tr < 1.0e-3 else None)
     rig, ok = run(sole_force=[0, 0, 700])
     fn, pen = rig.contact()
     tr = max(abs(v) for v in talus(rig)[:3])
@@ -334,7 +338,13 @@ def check_six_dof(xml: Path) -> None:
     check(lat["drawer 150 N + 700 N axial"] < lat["drawer 150 N"],
           "axial compression reduces anterior drawer")
     t0, t1, t2 = (res[k][3] for k in ("inversion 3 N*m", "inversion 3 N*m, ATFL cut", "inversion 3 N*m, ATFL+CFL cut"))
-    check(t0 < t1 < t2, f"talar tilt grows with sectioning ({deg(t0):.1f} -> {deg(t1):.1f} -> {deg(t2):.1f} deg)")
+    # Bahr 1997: at neutral, cutting the ATFL alone gave no significant increase
+    # in supination; cutting the CFL as well gave a large one.
+    check(t1 >= t0 - np.radians(0.2) and t2 > t1 + np.radians(5),
+          f"talar tilt: little change with the ATFL cut, large with ATFL+CFL cut, as in Bahr 1997 "
+          f"({deg(t0):.1f} -> {deg(t1):.1f} -> {deg(t2):.1f} deg)")
+
+    check_bahr1997(xml)
 
     # (c) strain through flexion, for comparison with the hinge (section 4)
     print("\n  Ligament strain (%) driving the ankle with the subtalar held at 0 (talus free to settle):")
@@ -348,6 +358,58 @@ def check_six_dof(xml: Path) -> None:
               + f"   {deg(rig.q('talus_tilt_r')):7.1f}  {rig.q('talus_tz_r') * 1e3:5.2f}")
     print("  NOTE  in plantarflexion the deltoid bands tilt the talus into inversion and shift it"
           " medially,\n        which raises lateral-ligament strain above the hinge values - see README")
+
+
+# Bahr et al. (1997) Acta Orthop Scand 68:435-441, Tables 2-3: increase in
+# ligament force (N, mean and SE, n=8) during clinical stress tests with the
+# foot plate locked at each flexion angle (deg, + = dorsiflexion).
+BAHR1997 = {
+    "talar tilt 5.7 N*m": {10: ((26, 4), (123, 19)), 0: ((36, 6), (81, 16)),
+                           -10: ((64, 18), (60, 11)), -20: ((123, 38), (32, 12))},
+    "drawer 80 N":        {10: ((33, 6), (40, 6)), 0: ((23, 5), (15, 5)),
+                           -10: ((34, 6), (6, 3)), -20: ((53, 24), (-3, 2))},
+}
+
+
+def check_bahr1997(xml: Path) -> None:
+    """Benchmark: ATFL/CFL force increases under Bahr 1997's talar-tilt and drawer tests.
+
+    Talocrural flexion is held at each angle; the subtalar joint and the
+    talus's other DOFs are free. Force increase = loaded minus unloaded at the
+    same angle. Only the flexion trends are asserted; magnitudes are reported
+    against Bahr's mean +/- 2 SD (SD = SE * sqrt(8)).
+    """
+    from bench import Bench
+    print("\n  Bahr 1997 benchmark (force increase, N; Bahr mean +/- SD):")
+    print(f"  {'test':<20}{'ankle':>6}{'ATFL model':>12}{'Bahr':>12}{'CFL model':>12}{'Bahr':>12}")
+    loads = {"talar tilt 5.7 N*m": dict(foot_torque=[5.7, 0, 0]), "drawer 80 N": dict(heel_force=[80, 0, 0])}
+    inside = total = 0
+    trend = {}
+    for test, table in BAHR1997.items():
+        trend[test] = []
+        for ang, ((fa, sa), (fc, sc)) in table.items():
+            out = []
+            for ld in ({}, loads[test]):
+                rig = Bench(xml)
+                rig.hold(ang, None)
+                ok = rig.settle(1.5, **ld)
+                f = rig.ligament_forces()
+                out.append((f["ATFL_r"], f["CFL_r"], ok))
+            da, dc = out[1][0] - out[0][0], out[1][1] - out[0][1]
+            trend[test].append((da, dc))
+            sd_a, sd_c = sa * 8 ** 0.5, sc * 8 ** 0.5
+            for mod, mean, sd in ((da, fa, sd_a), (dc, fc, sd_c)):
+                total += 1
+                inside += abs(mod - mean) <= 2 * sd
+            print(f"  {test:<20}{ang:+6d}{da:12.0f}{f'{fa}+/-{sd_a:.0f}':>12}{dc:12.0f}{f'{fc}+/-{sd_c:.0f}':>12}"
+                  + ("" if out[0][2] and out[1][2] else "  UNSTABLE"))
+    print(f"  {inside}/{total} model values within Bahr mean +/- 2 SD")
+    a = [t[0] for t in trend["talar tilt 5.7 N*m"]]
+    c = [t[1] for t in trend["talar tilt 5.7 N*m"]]
+    check(a[-1] > a[0], f"talar tilt: ATFL takes more load in plantarflexion than dorsiflexion "
+          f"({a[0]:.0f} N at 10 DF -> {a[-1]:.0f} N at 20 PF; Bahr 26 -> 123 N)")
+    check(c[0] > c[-1], f"talar tilt: CFL takes more load in dorsiflexion than plantarflexion "
+          f"({c[0]:.0f} N at 10 DF -> {c[-1]:.0f} N at 20 PF; Bahr 123 -> 32 N)")
 
 
 def instantaneous_axis(m: mujoco.MjModel, d: mujoco.MjData, q: float, h: float = 1e-4) -> np.ndarray:

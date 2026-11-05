@@ -46,7 +46,13 @@ REFS = {
                 "ligaments. J Biomech Eng 122:15-22; force-strain fits T = a(exp(b*eps)-1) as tabulated "
                 "in Xu C. et al. (2019) J Orthop Surg Res 14:114 (PMC6489249), Table 1 - Funk's own "
                 "tables not yet checked",
-    "Siegler1988": "Siegler S., Block J., Schneck C.D. (1988) The mechanical characteristics of the "
+    "Ozeki2002": "Ozeki S. et al. (2002) Simultaneous strain measurement with determination of a zero "
+                 "strain reference for the medial and lateral ligaments of the ankle. Foot Ankle Int "
+                 "23(9):825-832 (n=12, zero-strain reference n=5); values from the author's thesis summary "
+                 "(Hokkaido Univ. 2002) - journal tables not yet checked",
+    "Bahr1997": "Bahr R. et al. (1997) Mechanics of the anterior drawer and talar tilt tests. Acta Orthop "
+                "Scand 68(5):435-441 (n=8, buckle transducers; Tables 2-3, read in full text)",
+    "Siegler1988":"Siegler S., Block J., Schneck C.D. (1988) The mechanical characteristics of the "
                    "collateral ligaments of the human ankle joint. Foot Ankle 8:234-242; tibionavicular "
                    "stiffness 39.1 N/mm and failure load 120 N as cited by Shin J. et al. (2012) Ann "
                    "Biomed Eng (automotive FE foot model) and Xu 2019 - original tables not yet checked",
@@ -78,25 +84,35 @@ class Ligament:
     failure_load: float | None = None  # N
     notes: str = ""
     reference_length: float | None = None  # m, published centre-to-centre length at neutral
+    reference_source: str = "Campbell2014"
 
 
 TNL_K = 39.1e3  # N/m, Siegler1988 (secondary)
 
 LIGAMENTS = [
     # ---- lateral collateral complex --------------------------------------
+    # Taut onsets: Ozeki2002's zero-strain references (cadaver strain gauges
+    # calibrated by a tensile test of each bone-ligament-bone unit). They replace
+    # Takao2021's onsets (ATFL 0 deg; CFL biphasic 20 PF / 5 DF), which were
+    # strain changes without a zero-strain reference. Takeuchi 2021 (strain
+    # probe) also has the ATFL beginning to tense near 20 deg PF.
     Ligament("ATFL_r", "anterior talofibular", "tibia_r", "talus_r",
-             ("linear", 44.7e3), "measured: Rochelle2020", (0.0,), "measured: Takao2021 (tenses from 0 deg PF)",
-             failure_load=263.6),
+             ("linear", 44.7e3), "measured: Rochelle2020", (-16.2,),
+             "measured: Ozeki2002 (zero strain at 16.2 +/- 2.6 deg PF)",
+             failure_load=263.6, reference_length=0.0198, reference_source="Ozeki2002",
+             notes="model neutral length is shorter than Ozeki2002 (19.8 mm, cadaver caliper) and "
+                   "de Asla 2009 (16.3 mm, in vivo); its length change over flexion matches de Asla's "
+                   "in-vivo centroid distance, not Ozeki's midsubstance gauge (README)"),
     Ligament("CFL_r", "calcaneofibular", "tibia_r", "calcn_r",
-             ("linear", 45.8e3), "measured: Rochelle2020", (-20.0, 5.0),
-             "measured: Takao2021 (biphasic: tenses from 20 deg PF and from ~5 deg DF)",
-             failure_load=367.8,
-             notes="nearly isometric over ankle flexion in this geometry; the straight-line path "
-                   "on a 1-DOF hinge reproduces the PF branch but not DF tensioning"),
+             ("linear", 45.8e3), "measured: Rochelle2020", (17.8,),
+             "measured: Ozeki2002 (zero strain at 17.8 +/- 6.4 deg DF)",
+             failure_load=367.8, reference_length=0.0299, reference_source="Ozeki2002",
+             notes="nearly isometric over ankle flexion in this geometry, so it is set mainly by "
+                   "subtalar inversion (and talar tilt in the 6-DOF build)"),
     Ligament("PTFL_r", "posterior talofibular", "tibia_r", "talus_r",
-             ("linear", 59.0e3), "measured: Rochelle2020", (10.0,),
-             "qualitative: taut in dorsiflexion; 10 deg onset assumed",
-             failure_load=351.4),
+             ("linear", 59.0e3), "measured: Rochelle2020", (18.0,),
+             "measured: Ozeki2002 (zero strain at 18.0 +/- 7.5 deg DF)",
+             failure_load=351.4, reference_length=0.0237, reference_source="Ozeki2002"),
     # ---- deltoid complex (attachments: Campbell2014) ----------------------
     Ligament("TNL_r", "tibionavicular (superficial deltoid)", "tibia_r", "calcn_r",
              ("linear", TNL_K), "measured (secondary): Siegler1988", (-10.0,),
@@ -298,12 +314,18 @@ def attachments(mesh_dir: Path) -> dict[str, tuple[np.ndarray, np.ndarray]]:
         # posterior-inferior to the fibular tip.
         "CFL_r": (fib_anterior(0.0053),
                   _pick(foot, foot_band(0.015, 0.040) & (foot[:, y] < 0.025), foot[:, z])),
-        # PTFL: malleolar fossa (posteromedial distal fibula) to the lateral
-        # tubercle of the talar posterior process.
-        "PTFL_r": (_pick(fib, (fib[:, y] > lm_tip[y] + 0.004) & (fib[:, y] < lm_tip[y] + 0.012),
-                         -fib[:, x] - fib[:, z]),
-                   _pick(tal, tal[:, z] > 0, -tal[:, x])),
     }
+    # PTFL: malleolar fossa (posteromedial distal fibula) to the posterior
+    # process of the talus. The coarse talus mesh does not resolve the lateral
+    # tubercle, so the insertion is the posterior-process vertex (posterior of
+    # x = -10 mm and below the talar origin, talus frame) whose neutral length
+    # is closest to Ozeki2002's in-situ length (23.7 mm). The previous rule
+    # (most posterior vertex of the lateral half) gave 14.6 mm.
+    ptfl_o = _pick(fib, (fib[:, y] > lm_tip[y] + 0.004) & (fib[:, y] < lm_tip[y] + 0.012), -fib[:, x] - fib[:, z])
+    ptfl_ref = next(L for L in LIGAMENTS if L.name == "PTFL_r").reference_length
+    process = (tal[:, x] < -0.010) & (tal[:, y] < 0.0)
+    gap = np.linalg.norm(tal + BODY_ORIGIN_IN_TIBIA["talus_r"] - ptfl_o, axis=1)
+    pts["PTFL_r"] = (ptfl_o, _pick(tal, process, -np.abs(gap - ptfl_ref)))
     # ---- Deltoid: origins and insertions from Campbell2014 Table I ----------
     # Origins: Table I offsets from the inferior tip of the medial malleolus.
     # Insertions: origin + published length along the published orientation

@@ -157,7 +157,7 @@
             <joint name="talus_rot_r" class="talar_play_rot" type="hinge" pos="0.006743 -0.00236949 -0.001891" axis="0 1 0" range="-0.7 0.7" />
             <geom name="r_talus" class="bone" type="mesh" mesh="r_talus" />
             <site name="ATFL_r-P2" class="ligament" pos="0.011494 0.012555 0.014434" />
-            <site name="PTFL_r-P2" class="ligament" pos="-0.017213 -0.004306 0.005621" />
+            <site name="PTFL_r-P2" class="ligament" pos="-0.015336 -0.001709 -0.00502" />
             <site name="dATTL_r-P2" class="ligament" pos="0.0233135 -0.00110778 -0.0132441" />
             <site name="dPTTL_r-P2" class="ligament" pos="0.0106798 0.00179744 -0.0109777" />
             <geom name="talar_trochlea_r" class="cartilage" type="cylinder" size="0.0219125" fromto="0.0118676 0.00166874 -0.0142777 0.00161841 -0.00640772 0.0104957" contype="2" conaffinity="0" />
@@ -313,15 +313,15 @@
       <site site="tibpost_r-P3" />
       <site site="tibpost_r-P4" />
     </spatial>
-    <spatial name="ATFL_r" class="ligament" stiffness="44700" springlength="0 0.0141461">
+    <spatial name="ATFL_r" class="ligament" stiffness="44700" springlength="0 0.0164264">
       <site site="ATFL_r-P1" />
       <site site="ATFL_r-P2" />
     </spatial>
-    <spatial name="CFL_r" class="ligament" stiffness="45800" springlength="0 0.0297277">
+    <spatial name="CFL_r" class="ligament" stiffness="45800" springlength="0 0.0296488">
       <site site="CFL_r-P1" />
       <site site="CFL_r-P2" />
     </spatial>
-    <spatial name="PTFL_r" class="ligament" stiffness="59000" springlength="0 0.0165631">
+    <spatial name="PTFL_r" class="ligament" stiffness="59000" springlength="0 0.0264168">
       <site site="PTFL_r-P1" />
       <site site="PTFL_r-P2" />
     </spatial>

@@ -3,3 +3,5 @@ __pycache__/
 MUJOCO_LOG.TXT
 # alternative builds; regenerate with build_ankle_model.py (model/ is the committed default build)
 model_*/
+# copyrighted papers dropped in for reading; never commit
+literature/
