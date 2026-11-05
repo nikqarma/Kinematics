@@ -17,12 +17,27 @@ Started 2026-11-05. Status key: *wanted* (none of it was readable), *abstract on
 | Paper | Status | Used for |
 |---|---|---|
 | Colville M.R. et al. (1990) Strain measurement in lateral ankle ligaments. *Am J Sports Med* 18(2):196-200 | have | Colville benchmark in `verify_ankle_model.py`. It gauges the whole ATFL only, with no per-band data |
+| Edama M. et al. (2025) Differences in ankle stabilizing function between the upper and lower fiber bundles of the ATFL. *Sci Rep* 15:26126 (open access, CC BY-NC-ND) | have | Qualitative per-band check only, no onsets or stiffness (see note below) |
+
+**Edama 2025 per-band findings:**
+- **Setup:** 10 Thiel-embalmed feet from donors of about 90 years, 5 per group. A Telos device applied 120 N, and ultrasound measured the malleolus–talus distance.
+- **Drawer:** cutting either band increased drawer at 30 PF only.
+- **Inversion:** cutting the lower band increased inversion opening at 0 deg. The abstract says it was the upper band, but Table 3 and the results say lower; Table 3 is taken as correct.
+- **No group difference:** the upper-cut and lower-cut groups never differed significantly. SDs are often larger than the effects.
+- **Use:** supports a two-band ATFL with the lower band acting near neutral in inversion, coupled to the CFL by arciform fibres. It cannot set band onsets, stiffness or geometry.
 
 ## Next step: talar-tilt restraint (6-DOF build)
 
 | Priority | Paper | Status | What it would give |
 |---|---|---|---|
-| A | ATFL superior/inferior fascicle robotic study, 2023 (PMID 37232327) | abstract only | Per-band function and onsets, needed for a two-band ATFL (its inferior band may restrain tilt near neutral) |
+| A | Dalmau-Pastor M. et al. (2023) Clinical relevance and function of ATFL superior and inferior fascicles: a robotic study. *Am J Sports Med* 51(8):2169-2175 (PMID 37232327) | abstract only | 6-DOF robot, 10 cadavers, serial sectioning superior -> inferior: per-band contribution to drawer, internal rotation and inversion through flexion. The best source for a two-band ATFL. Note: the inferior band was never cut alone |
+| A | Edama M. et al. (2018) Morphological features of the ATFL by the number of fiber bundles. *Ann Anat* 216:69-74 | abstract only | Per-band length, width and angle (81 legs; two-band type 57%). Sets band geometry |
+| B | Edama M. et al. (2019) Effect of the number of ATFL fiber bundles on ankle braking function: a simulation study. *Surg Radiol Anat* 41(1):69-73 | abstract only | Per-band length change in 20 DF / 30 PF / 20 inversion: the upper band stretches in DF and PF, the lower band shortens in PF and stretches in DF (per Edama 2025). Could set band onsets |
+| B | Ozeki S. et al. (2006) Ankle ligament tensile forces at the end points of passive circumferential rotating motion. *Foot Ankle Int* 27(11):965-969 | abstract only | Peak ATFL/CFL/PTFL/TCL forces at end range (8 cadavers): ATFL 108-130 N in supination + PF. A force-magnitude benchmark |
+| B | Cordier G. et al. (2021) Connecting fibers between ATFL's inferior fascicle and CFL transmit tension between both ligaments. *Knee Surg Sports Traumatol Arthrosc* 29:2511-2516 | wanted | Whether the inferior band and CFL should share load (coupled springs) |
+| B | Vega J. et al. (2020) The lateral fibulotalocalcaneal ligament complex: an ankle stabilizing isometric structure. *Knee Surg Sports Traumatol Arthrosc* 28:8-17 | wanted | Inferior band + CFL isometry through flexion |
+| C | Kakegawa A. et al. (2022) Relationship between inferior fascicle of ATFL and articular capsule. *Surg Radiol Anat* 44:253-259 | wanted | Inferior band–capsule attachment, relevant to capsule restraint of tilt |
+| C | Rasmussen O., Tovborg-Jensen I. (1982) Mobility of the ankle joint. *Acta Orthop Scand* 53:155-160 | wanted | Talar rotation with and without the lateral ligaments (the ATFL controls internal rotation) |
 | A | Robotic ATFL in-situ force under inversion / internal-rotation torque, *Foot Ankle Orthop* 2018 | not reached (DOAJ 403) | ATFL force vs applied torque, a direct check on talar-tilt load sharing |
 | A | Bahr R. et al. (1998) *Knee Surg Sports Traumatol Arthrosc* 6:115-121 | wanted | ATFL/CFL forces across positions with 375 N axial compression (loaded tilt behaviour) |
 | A | Choisne J. et al. (2012) *J Biomech* 45:46-52 | not reached | Probably the applied inversion torques and kinematics method behind the Choisne 2013 benchmark |
