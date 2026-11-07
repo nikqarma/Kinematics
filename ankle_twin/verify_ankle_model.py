@@ -43,7 +43,8 @@ KLEIN1996_TS = -52.8  # triceps surae
 # (no established direction, or the joint is not crossed in this model).
 LIGAMENT_FUNCTION = {
     #           ankle  subtalar
-    "ATFL_r":  (-1,    None),   # taut in plantarflexion; crosses talocrural only here
+    "ATFL_r":  (-1,    None),   # superior band: taut in plantarflexion; crosses talocrural only here
+    "ATFLi_r": (None,  None),   # inferior band: isometric through flexion (Vega 2020), checked separately
     "CFL_r":   (None,  +1),     # taut in inversion; biphasic in flexion (Takao 2021), see note
     "PTFL_r":  (+1,    None),   # taut in dorsiflexion
     "TNL_r":   (-1,    -1),     # tenses from 10 deg PF (Takao 2020); superficial deltoid resists eversion
@@ -61,6 +62,8 @@ LIGAMENT_FUNCTION = {
 # because the common cause is the MS-Human-700 ankle axis position (README).
 DF_TIGHTENING = {"CFL_r": "Takao 2021", "TCL_r": "Takao 2020", "dPTTL_r": "anatomy",
                  "PTFL_r": "anatomy"}
+
+ATFL = ("ATFL_r", "ATFLi_r")  # both bands: "cutting the ATFL" in the cadaver studies
 
 failures: list[str] = []
 known: list[str] = []
@@ -177,6 +180,20 @@ def check_ligaments(m: mujoco.MjModel, d: mujoco.MjData) -> None:
                                          (js, LIGAMENT_FUNCTION[n][1], "subtalar", "inversion", "eversion")):
             if sign is not None:
                 check(np.sign(J[i, col]) == sign, f"{n} lengthens in {pos if sign > 0 else neg}")
+
+    # (b2) ATFL bands (Vega 2020): the superior band lengthens 6.6 mm from full DF
+    # to full PF; the inferior band is isometric (10.6 mm in both).
+    def length_change(name: str) -> float:
+        tid = m.tendon(name).id
+        Ls = []
+        for a_deg in (-30, 20):
+            at(np.radians(a_deg))
+            Ls.append(d.ten_length[tid])
+        return (Ls[0] - Ls[1]) * 1000
+    dsup, dinf = length_change("ATFL_r"), length_change("ATFLi_r")
+    check(dsup > 4.0 and abs(dinf) < 2.0,
+          f"ATFL bands, 20 DF -> 30 PF: superior {dsup:+.1f} mm, inferior {dinf:+.1f} mm "
+          "(Vega 2020: +6.6 mm and isometric)")
 
     missed = [f"{n} ({J[ligs.index(n), ja] * 1000:+.1f} mm/rad; {src})"
               for n, src in DF_TIGHTENING.items() if J[ligs.index(n), ja] <= 0]
@@ -323,11 +340,11 @@ def check_six_dof(xml: Path) -> None:
     lat0 = rig0.site_in_tibia("ATFL_r-P2")[0]
     for name, cuts, loads in [
         ("drawer 150 N", (), dict(heel_force=[150, 0, 0])),
-        ("drawer 150 N, ATFL cut", ("ATFL_r",), dict(heel_force=[150, 0, 0])),
+        ("drawer 150 N, ATFL cut", ATFL, dict(heel_force=[150, 0, 0])),
         ("drawer 150 N + 700 N axial", (), dict(heel_force=[150, 0, 0], sole_force=[0, 0, 700])),
         ("inversion 3 N*m", (), dict(foot_torque=[3, 0, 0])),
-        ("inversion 3 N*m, ATFL cut", ("ATFL_r",), dict(foot_torque=[3, 0, 0])),
-        ("inversion 3 N*m, ATFL+CFL cut", ("ATFL_r", "CFL_r"), dict(foot_torque=[3, 0, 0])),
+        ("inversion 3 N*m, ATFL cut", ATFL, dict(foot_torque=[3, 0, 0])),
+        ("inversion 3 N*m, ATFL+CFL cut", ATFL + ("CFL_r",), dict(foot_torque=[3, 0, 0])),
     ]:
         rig, ok = run(cuts, **loads)
         res[name] = talus(rig)
@@ -341,14 +358,16 @@ def check_six_dof(xml: Path) -> None:
     check(lat["drawer 150 N + 700 N axial"] < lat["drawer 150 N"],
           "axial compression reduces anterior drawer")
     t0, t1, t2 = (res[k][3] for k in ("inversion 3 N*m", "inversion 3 N*m, ATFL cut", "inversion 3 N*m, ATFL+CFL cut"))
-    # Bahr 1997: at neutral, cutting the ATFL alone gave no significant increase
-    # in supination; cutting the CFL as well gave a large one.
-    check(t1 >= t0 - np.radians(0.2) and t2 > t1 + np.radians(5),
-          f"talar tilt: little change with the ATFL cut, large with ATFL+CFL cut, as in Bahr 1997 "
-          f"({deg(t0):.1f} -> {deg(t1):.1f} -> {deg(t2):.1f} deg)")
+    # Cutting the CFL as well as the ATFL raises talar tilt sharply in both Bahr
+    # 1997 and Rasmussen 1982. They disagree on the ATFL alone (Bahr: no
+    # significant change; Rasmussen: 6 -> 11 deg), so that step is reported only.
+    check(t2 > t1 + np.radians(5) and t1 >= t0 - np.radians(0.2),
+          f"talar tilt rises sharply once the CFL is cut as well as the ATFL "
+          f"({deg(t0):.1f} -> {deg(t1):.1f} -> {deg(t2):.1f} deg; ATFL alone: Bahr no change, Rasmussen +5 deg)")
 
     check_bahr1997(xml)
-    check_choisne2013(xml)
+    check_rasmussen1982(xml)
+    check_pellegrini2016(xml)
     check_colville1990(xml)
 
     # (c) strain through flexion, for comparison with the hinge (section 4)
@@ -399,7 +418,7 @@ def check_bahr1997(xml: Path) -> None:
                 rig.hold(ang, None)
                 ok = rig.settle(1.5, **ld)
                 f = rig.ligament_forces()
-                out.append((f["ATFL_r"], f["CFL_r"], ok))
+                out.append((f["ATFL_r"] + f["ATFLi_r"], f["CFL_r"], ok))  # Bahr's transducer: whole ATFL
             da, dc = out[1][0] - out[0][0], out[1][1] - out[0][1]
             trend[test].append((da, dc))
             sd_a, sd_c = sa * 8 ** 0.5, sc * 8 ** 0.5
@@ -417,44 +436,92 @@ def check_bahr1997(xml: Path) -> None:
           f"({c[0]:.0f} N at 10 DF -> {c[-1]:.0f} N at 20 PF; Bahr 123 -> 32 N)")
 
 
-# Choisne et al. (2013) ISB congress abstract, Table 1 (n=9, barefoot, manual
-# inversion to end range; mean, SD in deg): subtalar and talocrural inversion,
-# intact and with CFL + cervical + ITCL cut.
-CHOISNE2013 = {"intact": {"subtalar": (13.46, 3.48), "talar": (3.43, 3.08)},
-               "CFL+CL+ITCL cut": {"subtalar": (17.73, 4.29), "talar": (8.64, 5.44)}}
 SUBTALAR_STOP_DEG = 19.5  # MS-Human-700 range, kept (build_ankle_model.SUBTALAR_RANGE)
 
+# Rasmussen & Tovborg-Jensen (1982) Acta Orthop Scand 53:155-160: 1.5 N*m on the
+# talus (constant transverse component), subtalar fixed by a nail, tendons cut,
+# n=6 per plane. Mean talar tilt and internal rotation (deg) after serial cuts.
+RASMUSSEN1982 = {"intact": (6, 7), "ATFL cut": (11, 18), "ATFL+CFL cut": (19, 21), "ATFL+CFL+PTFL cut": (46, 26)}
 
-def check_choisne2013(xml: Path) -> None:
-    """Benchmark: how inversion splits between the subtalar joint and talar tilt.
 
-    Ankle held at neutral, subtalar and talar DOFs free, Bahr 1997's 5.7 N*m
-    supination torque on the foot. Choisne's torque was manual (not reported),
-    so magnitudes are indicative; the directions are asserted.
+def check_rasmussen1982(xml: Path) -> None:
+    """Benchmark: talar tilt and internal rotation at 1.5 N*m, subtalar and ankle held at 0."""
+    from bench import Bench
+    print("\n  Rasmussen 1982 benchmark (1.5 N*m, ankle and subtalar held at 0; deg, Rasmussen mean):")
+    cut_sets = {"intact": (), "ATFL cut": ATFL, "ATFL+CFL cut": ATFL + ("CFL_r",),
+                "ATFL+CFL+PTFL cut": ATFL + ("CFL_r", "PTFL_r")}
+    res = {}
+    for case, cuts in cut_sets.items():
+        out = []
+        for torque, joint in (([1.5, 0, 0], "talus_tilt_r"), ([0, 0, 1.5], "talus_rot_r")):
+            rig = Bench(xml)
+            rig.cut(*cuts)
+            rig.hold(0, 0)
+            ok = rig.settle(1.5, foot_torque=torque)
+            out.append(np.degrees(rig.q(joint)) if ok else float("nan"))
+        res[case] = out
+        rt, rr = RASMUSSEN1982[case]
+        print(f"  {case:<20} tilt {out[0]:5.1f} (Rasmussen {rt:2d})   internal rotation {out[1]:5.1f} (Rasmussen {rr:2d})")
+    t = {k: v[0] for k, v in res.items()}
+    r = {k: v[1] for k, v in res.items()}
+    check(2 <= t["intact"] <= 10, f"intact talar tilt at 1.5 N*m within Rasmussen's 2-10 deg range ({t['intact']:.1f} deg)")
+    check(r["ATFL cut"] > r["intact"] + 2,
+          f"cutting the ATFL increases internal rotation ({r['intact']:.1f} -> {r['ATFL cut']:.1f} deg; Rasmussen 7 -> 18)",
+          known_reason="the idealised mortise jams in rotation: the trochlear cylinder wedges between the flat malleolar "
+                       "plates (~85 N each at 1.5 N*m), so the ATFL is barely loaded. Real mortises allow ~7 deg "
+                       "through fibular mobility and a wedge-shaped talus (README limitation 8)")
+    check(t["intact"] <= t["ATFL cut"] + 0.2 <= t["ATFL+CFL cut"] + 0.4 <= t["ATFL+CFL+PTFL cut"] + 0.6,
+          "talar tilt grows with each successive cut (Rasmussen)")
+
+
+# Pellegrini et al. (2016) J Bone Joint Surg Am 98:842-848, Table II (n=16, 4 N*m,
+# 36 N axial load, intact): inversion (deg, mean and SD) attributed to the subtalar
+# joint (ankle fixed) and to the ankle (ankle freed), by flexion (+ = DF).
+PELLEGRINI2016 = {10: ((3.8, 1.4), (6.4, 2.2)), 0: ((7.2, 1.7), (10.4, 3.1)),
+                  -10: ((8.0, 2.2), (13.1, 3.6)), -20: ((10.8, 2.6), (14.7, 3.4))}
+
+
+def check_pellegrini2016(xml: Path) -> None:
+    """Benchmark: subtalar vs ankle share of hindfoot inversion, and which ligament restrains the subtalar joint.
+
+    4 N*m inversion about the anterior-posterior axis with ankle flexion held.
+    Pellegrini measured calcaneal rotation in the coronal plane; the model's
+    subtalar hinge is oblique, so its angle is projected onto the AP axis.
     """
     from bench import Bench
-    print("\n  Choisne 2013 benchmark (inversion at neutral, 5.7 N*m; Choisne mean +/- SD at manual end range):")
-    res = {}
-    for case, cuts in (("intact", ()), ("CFL+CL+ITCL cut", ("CFL_r", "CL_r", "ITCL_r"))):
+    rig = Bench(xml)
+    mujoco.mj_forward(rig.m, rig.d)
+    ax = abs(rig.d.xaxis[rig.m.joint("subtalar_angle_r").id][0])  # world x = anterior
+
+    def run(ang, cuts=()):
         rig = Bench(xml)
         rig.cut(*cuts)
-        rig.hold(0, None)
-        ok = rig.settle(1.5, foot_torque=[5.7, 0, 0])
-        sub, tilt = np.degrees(rig.q("subtalar_angle_r")), np.degrees(rig.q("talus_tilt_r"))
-        res[case] = (sub, tilt)
-        ref = CHOISNE2013[case]
-        print(f"  {case:<17} subtalar {sub:5.1f} deg (Choisne {ref['subtalar'][0]:.1f} +/- {ref['subtalar'][1]:.1f})"
-              f"   talar tilt {tilt:5.1f} deg (Choisne {ref['talar'][0]:.1f} +/- {ref['talar'][1]:.1f})"
-              + ("" if ok else "  UNSTABLE"))
-    (s0, t0), (s1, t1) = res["intact"], res["CFL+CL+ITCL cut"]
-    check(s0 < SUBTALAR_STOP_DEG - 0.5, f"intact subtalar inversion is set by ligaments, not the joint stop "
-          f"({s0:.1f} deg, stop {SUBTALAR_STOP_DEG} deg)")
-    check(s1 > s0 + 2, f"cutting CFL + cervical + ITCL increases subtalar inversion ({s0:.1f} -> {s1:.1f} deg; "
-          "Choisne 13.5 -> 17.7)")
-    check(s0 > t0, f"most hindfoot inversion occurs at the subtalar joint (subtalar {s0:.1f} vs talar tilt "
-          f"{t0:.1f} deg; Choisne 13.5 vs 3.4)",
-          known_reason="talar tilt is too lax in the 6-DOF joint: at neutral only the CFL resists it (ATFL slack "
-                       "until 16 deg PF, no capsule, medial facet reduced to avoid jamming); README limitation 8")
+        rig.hold(ang, None)
+        ok = rig.settle(1.5, foot_torque=[4, 0, 0])
+        return np.degrees(rig.q("subtalar_angle_r")) * ax, np.degrees(rig.q("talus_tilt_r")), ok
+
+    print(f"\n  Pellegrini 2016 benchmark (4 N*m inversion; subtalar = coronal component, x{ax:.2f} of the hinge angle):")
+    print(f"  {'ankle':>6}{'subtalar':>10}{'Pellegrini':>13}{'talar tilt':>12}{'Pellegrini ankle':>18}")
+    share0 = None
+    for ang, ((sm, ss), (am, asd)) in PELLEGRINI2016.items():
+        s, t, ok = run(ang)
+        if ang == 0:
+            share0 = t / (s + t)
+        print(f"  {ang:+6d}{s:10.1f}{f'{sm}+/-{ss}':>13}{t:12.1f}{f'{am}+/-{asd}':>18}" + ("" if ok else "  UNSTABLE"))
+    check(0.25 <= share0 <= 0.75, f"both joints carry a substantial share of hindfoot inversion at neutral "
+          f"(ankle {share0 * 100:.0f}%; Pellegrini 59%)")
+    s0, *_ = run(0)
+    s_cfl, *_ = run(0, ("CFL_r",))
+    s_int, *_ = run(0, ("CL_r", "ITCL_r"))
+    s_all, *_ = run(0, ("CFL_r", "CL_r", "ITCL_r"))
+    print(f"  subtalar at neutral: intact {s0:.1f}, CFL cut {s_cfl:.1f}, CL+ITCL cut {s_int:.1f}, all three {s_all:.1f} deg")
+    check(s_all > s0 + 2, f"cutting CFL + CL + ITCL increases subtalar inversion ({s0:.1f} -> {s_all:.1f} deg)")
+    check(s_cfl - s0 > s_int - s0,
+          f"the CFL, not the cervical/interosseous ligaments, is the main subtalar restraint "
+          f"(CFL cut {s_cfl - s0:+.1f} deg vs CL+ITCL cut {s_int - s0:+.1f} deg; Pellegrini: CFL +5.7-6.2, CL+ITCL n.s.)",
+          known_reason="in MS-Human-700's 1-DOF oblique subtalar hinge the CFL lies 18 deg from the axis (5 mm moment "
+                       "arm), so it cannot resist hinge rotation; in cadavers it restrains calcaneal motion the hinge "
+                       "does not allow. Needs a subtalar joint with more freedom (README limitation 8)")
 
 
 # Colville et al. (1990) Am J Sports Med 18:196-200: midsubstance strain gauges,

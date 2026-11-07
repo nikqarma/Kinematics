@@ -116,6 +116,7 @@
           <site name="fhl_r-P1" pos="-0.031 -0.2163 0.02" />
           <site name="fhl_r-P2" pos="-0.0242 -0.3671 -0.0076" />
           <site name="ATFL_r-P1" class="ligament" pos="-0.006381 -0.390453 0.025794" />
+          <site name="ATFLi_r-P1" class="ligament" pos="-0.004985 -0.397859 0.018958" />
           <site name="CFL_r-P1" class="ligament" pos="-0.004985 -0.397859 0.018958" />
           <site name="PTFL_r-P1" class="ligament" pos="-0.021445 -0.399877 0.018225" />
           <site name="TNL_r-P1" class="ligament" pos="0.0136485 -0.382514 -0.0171525" />
@@ -129,6 +130,7 @@
             <joint name="ankle_axis_tilt_r" class="ankle" pos="0.006743 -0.00236949 -0.001891" axis="0.11027 -0.957497 -0.266535" range="-0.3 0.3" />
             <geom name="r_talus" class="bone" type="mesh" mesh="r_talus" />
             <site name="ATFL_r-P2" class="ligament" pos="0.011494 0.012555 0.014434" />
+            <site name="ATFLi_r-P2" class="ligament" pos="0.0104298 0.00884296 0.0127835" />
             <site name="PTFL_r-P2" class="ligament" pos="-0.015336 -0.001709 -0.00502" />
             <site name="dATTL_r-P2" class="ligament" pos="0.0233135 -0.00110778 -0.0132441" />
             <site name="dPTTL_r-P2" class="ligament" pos="0.0106798 0.00179744 -0.0109777" />
@@ -287,9 +289,13 @@
       <site site="tibpost_r-P3" />
       <site site="tibpost_r-P4" />
     </spatial>
-    <spatial name="ATFL_r" class="ligament" stiffness="44700" springlength="0 0.016315">
+    <spatial name="ATFL_r" class="ligament" stiffness="22350" springlength="0 0.016315">
       <site site="ATFL_r-P1" />
       <site site="ATFL_r-P2" />
+    </spatial>
+    <spatial name="ATFLi_r" class="ligament" stiffness="22350" springlength="0 0.0106">
+      <site site="ATFLi_r-P1" />
+      <site site="ATFLi_r-P2" />
     </spatial>
     <spatial name="CFL_r" class="ligament" stiffness="45800" springlength="0 0.0298054">
       <site site="CFL_r-P1" />

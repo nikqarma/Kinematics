@@ -63,6 +63,14 @@ REFS = {
                    "(n=9, end-range manual inversion, intact / CFL cut / CFL+cervical+ITCL cut)",
     "Colville1990": "Colville M.R. et al. (1990) Strain measurement in lateral ankle ligaments. Am J Sports "
                     "Med 18(2):196-200 (n=10, subtalar fixed with screws, 3 N*m moments; full text)",
+    "Vega2020": "Vega J., Malagelada F., Manzanares Cespedes M.C., Dalmau-Pastor M. (2020) The lateral "
+                "fibulotalocalcaneal ligament complex: an ankle stabilizing isometric structure. Knee Surg "
+                "Sports Traumatol Arthrosc 28:8-17 (n=30 fresh-frozen; accepted manuscript read, Table 1 missing)",
+    "Rasmussen1982": "Rasmussen O., Tovborg-Jensen I. (1982) Mobility of the ankle joint. Acta Orthop Scand "
+                     "53:155-160 (n=12, 1.5 N*m on the talus, subtalar fixed; full text)",
+    "Pellegrini2016": "Pellegrini M.J. et al. (2016) Systematic quantification of stabilizing effects of subtalar "
+                      "joint soft-tissue constraints in a novel cadaveric model. J Bone Joint Surg Am 98:842-848 "
+                      "(n=16, 4 N*m, 36 N axial load; full text, appendix tables not seen)",
     "Siegler1988":"Siegler S., Block J., Schneck C.D. (1988) The mechanical characteristics of the "
                    "collateral ligaments of the human ankle joint. Foot Ankle 8:234-242; tibionavicular "
                    "stiffness 39.1 N/mm and failure load 120 N as cited by Shin J. et al. (2012) Ann "
@@ -109,13 +117,27 @@ LIGAMENTS = [
     # Takao2021's onsets (ATFL 0 deg; CFL biphasic 20 PF / 5 DF), which were
     # strain changes without a zero-strain reference. Takeuchi 2021 (strain
     # probe) also has the ATFL beginning to tense near 20 deg PF.
-    Ligament("ATFL_r", "anterior talofibular", "tibia_r", "talus_r",
-             ("linear", 44.7e3), "measured: Rochelle2020", (-16.2,),
+    # The ATFL is two bands (Vega2020, two-band in 30/30 specimens). ATFL_r is the
+    # superior band: it lengthens 6.6 mm from DF to PF (Vega2020: 12.6 -> 19.2 mm),
+    # which matches this model's ATFL and Ozeki's 16 deg PF onset. ATFLi_r is the
+    # inferior band: isometric (10.6 mm in both PF and DF), sharing its fibular
+    # origin with the CFL. Rochelle2020 tested the whole ATFL; with no per-band
+    # widths (Vega2020 Table 1 not seen), stiffness and failure load are split
+    # equally between the bands - an assumption.
+    Ligament("ATFL_r", "anterior talofibular, superior band", "tibia_r", "talus_r",
+             ("linear", 22.35e3), "assumed: half of Rochelle2020's whole-ATFL 44.7 N/mm", (-16.2,),
              "measured: Ozeki2002 (zero strain at 16.2 +/- 2.6 deg PF)",
-             failure_load=263.6, reference_length=0.0198, reference_source="Ozeki2002",
+             failure_load=131.8, reference_length=0.0198, reference_source="Ozeki2002",
              notes="model neutral length is shorter than Ozeki2002 (19.8 mm, cadaver caliper) and "
                    "de Asla 2009 (16.3 mm, in vivo); its length change over flexion matches de Asla's "
-                   "in-vivo centroid distance, not Ozeki's midsubstance gauge (README)"),
+                   "in-vivo centroid distance and Vega2020's superior band, not Ozeki's midsubstance "
+                   "gauge (README). Failure load: half of Rochelle2020's 263.6 N (assumed split)"),
+    Ligament("ATFLi_r", "anterior talofibular, inferior band", "tibia_r", "talus_r",
+             ("linear", 22.35e3), "assumed: half of Rochelle2020's whole-ATFL 44.7 N/mm", (0.0,),
+             "assumed: zero strain at neutral (Vega2020: isometric through flexion, no tension value)",
+             failure_load=131.8, reference_length=0.0106, reference_source="Vega2020",
+             notes="fibular origin shared with the CFL (Vega2020); talar insertion below the superior "
+                   "band's. Failure load: half of Rochelle2020's 263.6 N (assumed split)"),
     Ligament("CFL_r", "calcaneofibular", "tibia_r", "calcn_r",
              ("linear", 45.8e3), "measured: Rochelle2020", (17.8,),
              "measured: Ozeki2002 (zero strain at 17.8 +/- 6.4 deg DF)",
@@ -360,6 +382,27 @@ def attachments(mesh_dir: Path) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     process = (tal[:, x] < -0.010) & (tal[:, y] < 0.0)
     gap = np.linalg.norm(tal + BODY_ORIGIN_IN_TIBIA["talus_r"] - ptfl_o, axis=1)
     pts["PTFL_r"] = (ptfl_o, _pick(tal, process, -np.abs(gap - ptfl_ref)))
+    # ATFL inferior band: fibular origin shared with the CFL (Vega2020). The
+    # coarse talus mesh has no vertex that is both ~10.6 mm from that origin and
+    # isometric, so the insertion is constructed like the deltoid insertions:
+    # a band stays isometric over flexion when its talar end lies in the plane
+    # through the ankle axis and its origin. The insertion is the point in that
+    # plane (landmark-registered Inman axis, used for every build), at the
+    # superior band's depth along the axis, Vega2020's 10.6 mm from the origin,
+    # on the outer (talar-surface) side. It lands ~4 mm below the superior
+    # insertion and ~4 mm from the nearest mesh vertex.
+    import ankle_axis as AX  # local import: ankle_axis imports this module
+    T = BODY_ORIGIN_IN_TIBIA["talus_r"]
+    atfli_o = pts["CFL_r"][0]
+    c_ax, u_ax = AX.axis("inman", mesh_dir)
+    C = c_ax + T
+    o_rel = atfli_o - C
+    o_rad = o_rel - (o_rel @ u_ax) * u_ax
+    r_o, e_rad = float(np.linalg.norm(o_rad)), o_rad / np.linalg.norm(o_rad)
+    a_o, a_p = float(o_rel @ u_ax), float((pts["ATFL_r"][1] + T - C) @ u_ax)
+    atfli_ref = next(L for L in LIGAMENTS if L.name == "ATFLi_r").reference_length
+    radial = r_o + math.sqrt(max(atfli_ref ** 2 - (a_p - a_o) ** 2, 0.0))
+    pts["ATFLi_r"] = (atfli_o, C + a_p * u_ax + radial * e_rad - T)
     # ---- Subtalar: sinus tarsi and tarsal canal --------------------------------
     # Talar points in the talus frame; calcaneal candidates are expressed in the
     # talus frame at neutral (calcn origin offset) to measure lengths, then
