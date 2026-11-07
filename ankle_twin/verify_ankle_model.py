@@ -74,6 +74,10 @@ KNOWN_DISCREPANCIES = {
     ("perbrev_r is a plantarflexor", "inman"):
         "the Inman-registered axis gives peroneus brevis a ~+1 mm (dorsiflexion) moment arm at neutral; "
         "Klein 1996 measured -9.9 mm (README, 'Ankle axis')",
+    ("inversion lengthens the CFL at every flexion angle (Colville)", "original"):
+        "on the original axis the 6-DOF talus subluxes anteriorly at 20 deg DF with no load (3-8 mm, held by "
+        "PTFL/dPTTL), so the unloaded baseline is displaced and inversion reseats it. With the stiff mortise this "
+        "check passed only because 3 N*m dislocated the talus 12.6 mm (README, 6-DOF section)",
 }
 AXIS_KIND = "original"
 
@@ -466,10 +470,7 @@ def check_rasmussen1982(xml: Path) -> None:
     r = {k: v[1] for k, v in res.items()}
     check(2 <= t["intact"] <= 10, f"intact talar tilt at 1.5 N*m within Rasmussen's 2-10 deg range ({t['intact']:.1f} deg)")
     check(r["ATFL cut"] > r["intact"] + 2,
-          f"cutting the ATFL increases internal rotation ({r['intact']:.1f} -> {r['ATFL cut']:.1f} deg; Rasmussen 7 -> 18)",
-          known_reason="the idealised mortise jams in rotation: the trochlear cylinder wedges between the flat malleolar "
-                       "plates (~85 N each at 1.5 N*m), so the ATFL is barely loaded. Real mortises allow ~7 deg "
-                       "through fibular mobility and a wedge-shaped talus (README limitation 8)")
+          f"cutting the ATFL increases internal rotation ({r['intact']:.1f} -> {r['ATFL cut']:.1f} deg; Rasmussen 7 -> 18)")
     check(t["intact"] <= t["ATFL cut"] + 0.2 <= t["ATFL+CFL cut"] + 0.4 <= t["ATFL+CFL+PTFL cut"] + 0.6,
           "talar tilt grows with each successive cut (Rasmussen)")
 

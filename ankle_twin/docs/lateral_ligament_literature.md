@@ -178,6 +178,25 @@ is the hinge build, which has no talar tilt.
 4. **Choisne check replaced** by Rasmussen 1982 and Pellegrini 2016 benchmarks. Items 2 and 3 are KNOWN there with
    these reasons.
 
+**Mortise step (2026-11-06):** both malleolar contact plates were softened (contact time constant 0.004 -> 0.08 s).
+
+| Time constant | Intact IR | IR, ATFL cut | IR, ATFL + CFL cut | 700 N malleolar penetration |
+|---|---|---|---|---|
+| 0.004 s | 1.7 deg | 1.7 deg | 17.4 deg | 0.02 mm |
+| 0.03 s | 3.1 deg | 17.0 deg | 18.1 deg | 0.19 mm |
+| 0.04 s | 6.3 deg | 17.2 deg | 18.2 deg | 0.24 mm |
+| 0.08 s (chosen) | 6.5 deg | 17.6 deg | 18.7 deg | 0.36 mm |
+| 0.1 s | 6.6 deg | 17.9 deg | 18.8 deg | 0.40 mm |
+| 0.2 s | 7.3 deg | 20.4 deg | 20.2 deg | 0.81 mm |
+
+- **Lateral plate alone** was not enough (3.0 deg intact at 0.1 s); both plates must be compliant.
+- **Choice of value:** 0.08 s is twice the unlocking threshold, chosen for margin rather than fitted. Rasmussen 1982
+  (7 / 18 / 21 deg) is then matched as an independent check.
+- **Colville checks:** both open Colville FAILs on the default 6-DOF build cleared, confirming the rotation-lock
+  cause.
+- **`--axis original` at 20 DF:** the talus subluxes anteriorly with no load (3-8 mm, PTFL/dPTTL loaded). It did so
+  with the stiff mortise as well, dislocating 12.6 mm under 3 N·m. This is an axis-placement problem, now KNOWN there.
+
 ## 2. Validation targets for inversion
 
 **Bahr 1997** (Acta Orthop Scand 68(5):435-441, **read**). 8 cadavers. Ligament force by buckle

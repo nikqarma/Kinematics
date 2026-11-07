@@ -54,6 +54,16 @@ PARAMS = {
     # leaves medial restraint to the deltoid.
     "medial_facet_span": ((0.85, 1.0), "R", "tuned: avoids geometric jamming in tilt (see note)"),
     "lateral_facet_span": ((-1.2, 1.0), "R", "assumed: lateral malleolus covers near full height"),
+    # Malleolar facet compliance (MuJoCo contact solref time constant, s).
+    # TUNED. With the stiff default (0.004 s) the trochlear cylinder jams between
+    # the flat malleolar plates in axial rotation (~85 N on each at 1.5 N*m), so
+    # internal rotation is locked at ~2 deg whatever ligaments are cut. Real
+    # mortises allow ~7 deg (Rasmussen 1982) through fibular mobility, cartilage
+    # and a talus wider anteriorly than posteriorly. Softening both plates frees
+    # rotation abruptly between 0.03 and 0.04 s, after which it is ligament-limited
+    # and nearly insensitive to the value (6.3-6.6 deg intact over 0.04-0.1 s).
+    # 0.08 s is twice the threshold; it is not fitted to Rasmussen's numbers.
+    "malleolar_solref_timeconst": (0.08, "s", "tuned: 2x the value that unlocks axial rotation (see note)"),
 }
 
 # Contact: frictionless (cartilage friction is ~0.01 or less), stiff and
@@ -198,7 +208,8 @@ def add_joint(model: ET.Element, femur: ET.Element, mesh_dir: Path) -> None:
             "name": f"malleolus_{side}_r", "class": "cartilage", "type": "box",
             "size": _fmt([R * 1.1, R * (hi - lo) / 2, plate_t]),
             "pos": _fmt(centre + sign * (hw + gap + plate_t) * a + R * (hi + lo) / 2 * e2),
-            "xyaxes": _fmt(np.r_[e1, e2]), "contype": "0", "conaffinity": "2"}))
+            "xyaxes": _fmt(np.r_[e1, e2]), "contype": "0", "conaffinity": "2",
+            "solref": f"{_p('malleolar_solref_timeconst'):g} 1"}))
     for k, g in enumerate(geoms):
         tibia.insert(first_body + k, g)
 

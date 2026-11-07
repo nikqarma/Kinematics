@@ -146,8 +146,8 @@
           <geom name="plafond_07_r" class="cartilage" type="box" size="0.00223459 0.014 0.001" pos="0.00345899 -0.382313 0.00742624" xyaxes="0.884069 -0.404655 0.23383 -0.366042 -0.288445 0.884767" contype="0" conaffinity="2" />
           <geom name="plafond_08_r" class="cartilage" type="box" size="0.00223459 0.014 0.001" pos="0.00690511 -0.384242 0.00822315" xyaxes="0.820179 -0.549197 0.160276 -0.366042 -0.288445 0.884767" contype="0" conaffinity="2" />
           <geom name="plafond_09_r" class="cartilage" type="box" size="0.00223459 0.014 0.001" pos="0.0100425 -0.386721 0.00871275" xyaxes="0.731369 -0.677052 0.0818514 -0.366042 -0.288445 0.884767" contype="0" conaffinity="2" />
-          <geom name="malleolus_lateral_r" class="cartilage" type="box" size="0.0243237 0.0243237 0.001" pos="-0.008577 -0.408871 0.0109681" xyaxes="0.924042 1.38778e-17 0.382291 -0.11027 0.957496 0.266535" contype="0" conaffinity="2" />
-          <geom name="malleolus_medial_r" class="cartilage" type="box" size="0.0243237 0.00165843 0.001" pos="5.13761e-05 -0.3784 -0.00988774" xyaxes="0.924042 1.38778e-17 0.382291 -0.11027 0.957496 0.266535" contype="0" conaffinity="2" />
+          <geom name="malleolus_lateral_r" class="cartilage" type="box" size="0.0243237 0.0243237 0.001" pos="-0.008577 -0.408871 0.0109681" xyaxes="0.924042 1.38778e-17 0.382291 -0.11027 0.957496 0.266535" contype="0" conaffinity="2" solref="0.08 1" />
+          <geom name="malleolus_medial_r" class="cartilage" type="box" size="0.0243237 0.00165843 0.001" pos="5.13761e-05 -0.3784 -0.00988774" xyaxes="0.924042 1.38778e-17 0.382291 -0.11027 0.957496 0.266535" contype="0" conaffinity="2" solref="0.08 1" />
           <body name="talus_r" pos="-0.01 -0.4 0">
             <inertial pos="0.00593729 0.000343512 -0.00168399" quat="0.467498 0.473443 0.545234 0.509919" mass="0.161" diaginertia="3.19801e-05 2.2775e-05 1.88084e-05" />
             <joint name="talus_tx_r" class="talar_play" type="slide" pos="0 0 0" axis="1 0 0" range="-0.015 0.015" />
