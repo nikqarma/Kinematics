@@ -60,16 +60,39 @@ MOUNT_QUAT = "0.707107 0.707107 0 0"
 MOUNT_HEIGHT = 1.0  # m; puts the foot clear of the (visual-only) floor.
 
 # Subtalar range (rad, + = inversion): MS-Human-700's hard stop at +-0.34 rad
-# (19.5 deg), kept on purpose. Before the cervical and interosseous ligaments
-# were added, every inversion test ended on this stop. With them, the intact
-# joint stays well inside it under clinical torques, and the stop now acts as
-# what is left once the intrinsic ligaments are gone - the articular surfaces
-# and capsule of the talocalcaneonavicular joint, which the model has no other
-# representation of. Choisne 2013 (manual end range, n=9): 13.5 +/- 3.5 deg
+# (19.5 deg), kept on purpose as the bony limit. Before the cervical and
+# interosseous ligaments were added, every inversion test ended on this stop.
+# Inside it, inversion is resisted by the ligaments and by the fitted
+# inversion stiffness below. Choisne 2013 (manual end range, n=9): 13.5 +/- 3.5 deg
 # intact, 17.7 +/- 4.3 deg with CFL + cervical + ITCL cut; eversion 8.6 +/- 3.7.
 # A 40 deg guard was tried: with CFL + cervical + ITCL cut the joint then ran to
 # the guard at 2 N*m, i.e. nothing else in the model limits it.
 SUBTALAR_RANGE = (-0.34, 0.34)
+
+# Subtalar inversion stiffness (ligasys-sprain branch; FITTED, not measured).
+# A one-sided rotational spring on subtalar_angle_r, active in inversion from
+# neutral (a fixed tendon with a deadband). It stands in for what the 1-DOF
+# hinge lacks: the talocalcaneal facets seating under axial load, plus the
+# capsule. Without it the subtalar ligaments are slack to 14 deg (Knudson 1997,
+# unloaded feet) and the joint ran to the 19.5 deg stop at 4 N*m, far laxer than
+# Pellegrini 2016's axially loaded feet. The stiffness is the single parameter
+# fitted to Pellegrini 2016 Table II (subtalar and ankle inversion at 4 N*m, four
+# flexion angles, both 6-DOF builds: 16 values, minimum sum of squared z-scores
+# at 12 N*m/rad over a 6-14 grid; onsets of 0 and 1.5 deg fit equally, so the
+# onset is left at neutral). Pellegrini is therefore calibration on this branch,
+# not validation. It does not depend on axial load, unlike the real joint.
+SUBTALAR_INVERSION_STIFFNESS = 12.0  # N*m/rad
+
+
+def add_subtalar_endrange(model: ET.Element) -> None:
+    tendon = model.find("tendon")
+    tendon.append(ET.Comment(
+        f" Subtalar inversion stiffness {SUBTALAR_INVERSION_STIFFNESS:g} N*m/rad from neutral: FITTED to "
+        "Pellegrini 2016 (articular/capsular stand-in; build_ankle_model.SUBTALAR_INVERSION_STIFFNESS) "))
+    fixed = ET.SubElement(tendon, "fixed", {"name": "subtalar_inversion_stiffness",
+                                            "stiffness": f"{SUBTALAR_INVERSION_STIFFNESS:g}",
+                                            "springlength": "-10 0"})
+    ET.SubElement(fixed, "joint", joint="subtalar_angle_r", coef="1")
 
 
 def load(path: Path) -> ET.Element:
@@ -301,6 +324,7 @@ def build(src: Path, out_dir: Path, knee_angle_deg: float | None, ligaments: boo
         add_ligaments(model, femur, mesh_dir)
         subtalar = next(j for j in femur.iter("joint") if j.get("name") == "subtalar_angle_r")
         subtalar.set("range", _fmt(SUBTALAR_RANGE))
+        add_subtalar_endrange(model)
     if six_dof:
         TC.add_joint(model, femur, mesh_dir)
 

@@ -78,6 +78,10 @@ KNOWN_DISCREPANCIES = {
         "on the original axis the 6-DOF talus subluxes anteriorly at 20 deg DF with no load (3-8 mm, held by "
         "PTFL/dPTTL), so the unloaded baseline is displaced and inversion reseats it. With the stiff mortise this "
         "check passed only because 3 N*m dislocated the talus 12.6 mm (README, 6-DOF section)",
+    ("plantarflexed supination tears an ATFL band first (TNL_r, ATFL_r, ATFL_r)", "original"):
+        "on the original axis, holding the ankle at 30 deg PF with no external load already stretches the "
+        "tibionavicular past its 120 N failure load (159 N; CFL 137, dATTL 190, dPTTL 164 N). The axis placement "
+        "preloads the ligaments in deep plantarflexion; at 20 and 10 deg PF the ATFL fails first",
 }
 AXIS_KIND = "original"
 
@@ -120,8 +124,6 @@ def check_ligaments(m: mujoco.MjModel, d: mujoco.MjData) -> None:
     ligs = [n for n in LIGAMENT_FUNCTION]
     ids = [m.tendon(n).id for n in ligs]          # base spring of each ligament (defines L0)
     all_ids = [i for n in ligs for i in ligament_tendon_ids(m, n)]  # every spring segment
-    k_all = m.tendon_stiffness[all_ids]
-    start_all = m.tendon_lengthspring[all_ids, 1]
     L0 = m.tendon_lengthspring[ids, 1]
     spec = {lig.name: lig for lig in LIG.LIGAMENTS}
     ja, js = m.joint("ankle_angle_r").dofadr[0], m.joint("subtalar_angle_r").dofadr[0]
@@ -136,12 +138,16 @@ def check_ligaments(m: mujoco.MjModel, d: mujoco.MjData) -> None:
 
     # (a) MuJoCo's springlength deadband must act as a tension-only spring:
     # qfrc_passive must equal sum_i J_i^T * (-k_i * max(0, L_i - start_i)) over all segments.
+    # The fitted subtalar inversion stiffness (a fixed tendon on the subtalar
+    # angle, deadband [-10, 0] rad) is one-sided in the same way, so it is included.
+    spring_ids = all_ids + [i for i in range(m.ntendon) if m.tendon(i).name == "subtalar_inversion_stiffness"]
     worst = 0.0
     for a in np.radians(np.arange(-35, 30, 5)):
         for s in np.radians([-15, 0, 15]):
             at(a, s)
-            J = tendon_jacobian(m, d)[all_ids]
-            f = -k_all * np.maximum(0.0, d.ten_length[all_ids] - start_all)
+            J = tendon_jacobian(m, d)[spring_ids]
+            f = -m.tendon_stiffness[spring_ids] * np.maximum(0.0, d.ten_length[spring_ids]
+                                                             - m.tendon_lengthspring[spring_ids, 1])
             expected = J.T @ f
             worst = max(worst, np.abs(expected[[ja, js]] - d.qfrc_passive[[ja, js]]).max())
     check(worst < 1e-6, f"springs are tension-only (max mismatch vs k*max(0,L-L0): {worst:.1e} N*m)")
@@ -441,7 +447,6 @@ def check_bahr1997(xml: Path) -> None:
           f"({c[0]:.0f} N at 10 DF -> {c[-1]:.0f} N at 20 PF; Bahr 123 -> 32 N)")
 
 
-SUBTALAR_STOP_DEG = 19.5  # MS-Human-700 range, kept (build_ankle_model.SUBTALAR_RANGE)
 
 # Rasmussen & Tovborg-Jensen (1982) Acta Orthop Scand 53:155-160: 1.5 N*m on the
 # talus (constant transverse component), subtalar fixed by a nail, tendons cut,
@@ -517,10 +522,11 @@ def check_pellegrini2016(xml: Path) -> None:
     s_int, *_ = run(0, ("CL_r", "ITCL_r"))
     s_all, *_ = run(0, ("CFL_r", "CL_r", "ITCL_r"))
     sn, sd = PELLEGRINI2016[0][0]
-    check(abs(s0 - sn) <= 2 * sd, f"intact subtalar inversion at neutral within 2 SD of Pellegrini ({s0:.1f} vs {sn} +/- {sd} deg)",
-          known_reason="the subtalar ligaments are slack to 14 deg (Knudson 1997, unloaded feet); Pellegrini applied a "
-                       "36 N axial load, which seats the talocalcaneal facets. The 1-DOF hinge has no subtalar "
-                       "articular contact, so it cannot stiffen under axial load (README limitation 8)")
+    # Calibration, not validation, on this branch: the subtalar inversion
+    # stiffness (build_ankle_model.SUBTALAR_INVERSION_STIFFNESS) is fitted to
+    # this table. The check guards the fit against later changes.
+    check(abs(s0 - sn) <= 2 * sd, f"intact subtalar inversion at neutral within 2 SD of Pellegrini "
+          f"({s0:.1f} vs {sn} +/- {sd} deg; calibration target)")
     print(f"  subtalar at neutral: intact {s0:.1f}, CFL cut {s_cfl:.1f}, CL+ITCL cut {s_int:.1f}, all three {s_all:.1f} deg")
     check(s_all > s0 + 2, f"cutting CFL + CL + ITCL increases subtalar inversion ({s0:.1f} -> {s_all:.1f} deg)")
     check(s_cfl - s0 > s_int - s0,

@@ -197,6 +197,60 @@ is the hinge build, which has no talar tilt.
 - **`--axis original` at 20 DF:** the talus subluxes anteriorly with no load (3-8 mm, PTFL/dPTTL loaded). It did so
   with the stiff mortise as well, dislocating 12.6 mm under 3 N·m. This is an axis-placement problem, now KNOWN there.
 
+### Sprain-order and subtalar step (2026-11-07)
+
+**Sprain-order probe.** Ankle flexion held, subtalar free, a foot torque ramped 1 N·m at a time; each ligament is cut
+at its reported failure load. With the CL taut from neutral, **the CL failed first in all 15 load cases** (4-8 N·m,
+about 12 deg subtalar inversion). With the CL excluded, plantarflexed supination already failed the ATFL first.
+
+**Why the CL failed first.** In the 1-DOF hinge only the CL (11.1 mm moment arm) and the CFL (5.4 mm) resist subtalar
+inversion; the ITCL works in eversion. The CL's 163.5 N failure load sits 2.6 mm (13 deg) past its onset, so it
+fails at a fixed torque wherever the onset is.
+
+| CL onset | Pellegrini subtalar at neutral (model / lit) | First to fail, supination 30/20/10 PF |
+|---|---|---|
+| 0 deg | 5.0 / 7.2 | CL, CL, CL |
+| 3 deg | 6.5 / 7.2 | CL, CL, CL |
+| 6 deg | 8.2 / 7.2 | CL, CL, CL |
+| 9 deg | 10.1 / 7.2 | CL, CL, CL |
+| 12 deg | 12.2 / 7.2 | ATFL, ATFL, ATFL |
+
+Two alternatives also failed to change the order: reversing the ITCL's moment arm (+5 mm) and a subtalar stop at
+12 deg with the CL taut from neutral. Moving the hinge axis through the tarsal canal (as Knudson and Michels place
+the ITCL) raises the CL's moment arm to 19 mm, which is worse.
+
+**New sources.**
+- **Knudson 1997** (Acta Orthop Scand 68:442, full text, n=6): tibia and talus fixed, ~0.2 N·m circumferential
+  load, no axial load. Intact feet rotate 13-14 +/- 7 deg into a supination stable zone and 11-14 deg into a pronation
+  one. Cutting the ITCL adds about 4 deg of supination (p = 0.008) and no pronation. Their supination screw axis is
+  within about 13 deg of the model's hinge.
+- **Michels 2022, accepted manuscript:** elongation at failure CFL 6.1, CL 3.0, ACaL-ITCL 2.6 mm; in-situ lengths
+  (at maximal passive tension, ankle neutral) CFL 19.7, CL 13.9, ACaL-ITCL 11.0 mm. It describes the CL as lying far
+  from the subtalar axis with footprints parallel to it, and as the main restraint to excessive inversion.
+
+**Changes.**
+1. **CL onset 14 deg** (Knudson's lax zone). The CL is 15.8 mm long there (Michels 13.9 +/- 2.1 mm). The CL no longer
+   fails, and the ATFL fails first in plantarflexed supination. The cost: the subtalar joint reached its 19.5 deg
+   stop at 4 N·m (13.6 vs Pellegrini 7.2 deg coronal), and the ankle share fell to 31%.
+2. **ITCL length 11.0 mm** (Michels) replaces the 10 mm placeholder. Its direction stays in eversion: a known hinge
+   limitation, contradicted by Knudson.
+3. **The repo was then split.** `ligasys-sprain` (device work, disclosed fits allowed) takes a fitted subtalar
+   stiffness. `research-twin` will replace the hinge with subtalar contact.
+
+**Fitted subtalar inversion stiffness (`ligasys-sprain` only).** It stands in for facet seating under axial load and
+the capsule, which the hinge lacks. Fitted to Pellegrini Table II on both 6-DOF builds (16 values, summed z^2):
+
+| Form | Best value | Summed z^2 | CFL cut at neutral | Subtalar flexion trend |
+|---|---|---|---|---|
+| Rigid stop | 8 deg | 38.5 | no change (joint on the stop) | flat |
+| One-sided spring from neutral (chosen) | 12 N·m/rad | 37.7 | +4.4 deg (Pellegrini +5.7-6.2) | rises into PF, as Pellegrini's |
+| Spring from 1.5 deg | 12-14 N·m/rad | 37.0-37.8 | +3.8-3.9 deg | rises |
+
+Result on the default 6-DOF build: subtalar 3.9 / 5.0 / 6.6 / 7.7 deg from 10 DF to 20 PF (Pellegrini 3.8 / 7.2 /
+8.0 / 10.8), ankle share 69% (59%). The ATFL fails first in supination at 8 / 11 / 15 N·m (30 / 20 / 10 PF). The
+talocrural side still has talar tilt falling into PF where Pellegrini's rises. On `--axis original`, holding the
+ankle at 30 PF already loads the TNL to 159 N (failure 120 N), so the TNL fails first there (KNOWN).
+
 ## 2. Validation targets for inversion
 
 **Bahr 1997** (Acta Orthop Scand 68(5):435-441, **read**). 8 cadavers. Ligament force by buckle
@@ -238,13 +292,14 @@ reported). Mean (SD), deg:
 | CFL cut, neutral | 15.18 (3.81) | 9.52 (3.94) | 8.22 (4.68) |
 | CFL + cervical + ITCL cut, neutral | 17.73 (4.29) | 9.12 (3.43) | 8.64 (5.44) |
 
-**Subtalar ligament material** (Michels 2022, Foot Ankle Surg 28:1014, abstract, 18 pairs):
+**Subtalar ligament material** (Michels 2022, Foot Ankle Surg 28:1014, accepted manuscript, 18 pairs; 2 N preload,
+200 mm/min ramp):
 
-| Ligament | Stiffness (N/mm) | Failure load (N) |
-|---|---|---|
-| CFL | 55.8 +/- 23.0 | 320.4 +/- 122.0 |
-| CL | 63.9 +/- 38.0 | 163.5 +/- 58.0 |
-| ACaL-ITCL complex | 150 +/- 51 | 382.5 +/- 158 |
+| Ligament | Stiffness (N/mm) | Failure load (N) | Elongation at failure (mm) | In-situ length (mm) |
+|---|---|---|---|---|
+| CFL | 55.8 +/- 23.0 | 320.4 +/- 122.0 | 6.1 +/- 0.9 | 19.7 +/- 2.4 |
+| CL | 63.9 +/- 38.0 | 163.5 +/- 58.0 | 3.0 +/- 1.1 | 13.9 +/- 2.1 |
+| ACaL-ITCL complex | 150 +/- 51 | 382.5 +/- 158 | 2.6 +/- 0.8 | 11.0 +/- 2.5 |
 
 The CFL values sit close to Rochelle 2020's, which the model keeps.
 
@@ -275,7 +330,8 @@ Dissected lengths 12.6 / 20.0 / 13.4 mm. No failure strain was reported.
 | Renstrom 1988, Foot Ankle 9:59-63 | abstract | ATFL +3.3% from 10 DF to 40 PF; CFL isometric |
 | Colville 1990, Am J Sports Med 18(2):196-200 | read (user-supplied PDF, kept local) | ATFL/CFL/PTFL strain vs flexion, inversion and IR (10 cadavers); whole-ATFL only |
 | Choisne 2013, ISB congress abstract | read | Subtalar vs talocrural inversion, intact and after CFL/CL/ITCL sectioning |
-| Michels 2022, Foot Ankle Surg 28:1014 | abstract | CL and ACaL-ITCL stiffness and failure |
+| Michels 2022, Foot Ankle Surg 28:1014 | read, accepted manuscript (user-supplied, local) | CL and ACaL-ITCL stiffness, failure, elongation at failure, in-situ length |
+| Knudson 1997, Acta Orthop Scand 68:442-446 | read (user-supplied, local) | Subtalar stable zones at ~0.2 N·m; ITCL section adds supination, not pronation (n=6) |
 | Poonja 2017, Cureus 9:e1382 | read | Cervical ligament dimensions |
 | Tochigi 2004, Foot Ankle Int 25:588 | abstract | ITCL function (drawer, distraction) |
 | Jotoku 2006, Foot Ankle Int 27:533 | **paywalled** | ITCL and anterior capsular ligament dimensions |

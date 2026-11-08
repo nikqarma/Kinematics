@@ -393,6 +393,9 @@
       <site site="ITCL_r-P1" />
       <site site="ITCL_r-P2" />
     </spatial>
+    <fixed name="subtalar_inversion_stiffness" stiffness="12" springlength="-10 0">
+      <joint joint="subtalar_angle_r" coef="1" />
+    </fixed>
   </tendon>
   <actuator>
     <general name="edl_r" class="muscle" tendon="edl_r_tendon" lengthrange="0.402703 0.470359" gainprm="0.75 1.05 603.498" biasprm="0.75 1.05 603.498" />
