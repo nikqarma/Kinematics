@@ -60,12 +60,12 @@ torque** at several torques (a moment-angle curve for the talocrural joint alone
 | Priority | Paper | Status | What it would give |
 |---|---|---|---|
 | A | Jotoku T. et al. (2006) Anatomy of ligamentous structures in the tarsal sinus and canal. *Foot Ankle Int* 27(7):533-538 | wanted | ITCL and anterior capsular ligament dimensions; would replace the 10 mm ITCL placeholder |
-| A | Michels F. et al. (2022) *Foot Ankle Surg* 28(7):1014-1020 | abstract only | Full text: lengths, elongation / strain at failure, which could set the CL onset (the CL currently fails at about 13 deg inversion) |
+| A | Michels F. et al. (2022) *Foot Ankle Surg* 28(7):1014-1020 | have (accepted manuscript) | Elongation at failure CL 3.0 mm, ACaL-ITCL 2.6 mm; in-situ lengths CL 13.9 mm, ACaL-ITCL 11.0 mm (now the ITCL reference length). No zero-strain angle, so it does not set the CL onset |
 | B | Tochigi Y. et al. (2004) *Foot Ankle Int* 25(8):588-596 | abstract only | ITCL sectioning: laxity and flexibility numbers; settles the ITCL's inversion vs eversion role |
 | B | Kjaersgaard-Andersen P. et al. (1988) *Am J Sports Med* 16(5):512-516 | abstract only | Hindfoot ROM changes after cutting the cervical ligament and ITCL, with the applied torques |
 | C | Weindel S. et al. (2010) Subtalar instability: a biomechanical cadaver study. *Arch Orthop Trauma Surg* 130(3):313-319 | not reached | Subtalar ROM after sequential sectioning |
 | B | Kjaersgaard-Andersen P., Wethelund J.O., Nielsen S. (1987) Lateral talocalcaneal instability following section of the calcaneofibular ligament. *Foot Ankle* 7(6):355-361 | wanted | Subtalar motion after CFL section: checks the CFL as the main subtalar restraint (Pellegrini) |
-| B | Knudson G.A. et al. (1997) Subtalar joint stability: talocalcaneal interosseous ligament function. *Acta Orthop Scand* 68(5):442-446 | wanted (likely open access, like Rasmussen 1982 in the same journal) | ITCL function with measured loads |
+| B | Knudson G.A. et al. (1997) Subtalar joint stability: talocalcaneal interosseous ligament function. *Acta Orthop Scand* 68(5):442-446 | have | Unloaded feet rotate 13-14 +/- 7 deg into supination at ~0.2 N·m (lax zone; used for the CL onset); cutting the ITCL adds ~4 deg supination, no pronation. Screw axis within ~13 deg of the model hinge |
 | C | Tochigi Y. et al. (2000) Influence of the ITCL injury on stability of the ankle-subtalar joint complex. *Foot Ankle Int* 21(6):486-491 | wanted | ITCL role in combined ankle-subtalar stability |
 | C | Leardini A., Stagni R., O'Connor J.J. (2001) Mobility of the subtalar joint in the intact ankle complex. *J Biomech* 34(6):805-809 | wanted | Subtalar mobility with the ankle intact |
 
