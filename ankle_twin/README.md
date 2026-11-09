@@ -259,6 +259,22 @@ With the compliant mortise, the ATFL also lengthens with inversion and with inte
 
 Real articular surfaces (segmented cartilage, contact on non-convex geometry) would fix 1–3.
 
+**Loaded stability (Stormont 1985), not yet achieved.** Under body-weight axial load the real joint surfaces provide all of the ankle's inversion-eversion stability. The verifier now checks this: 700 N axial load, 3 N·m inversion, ankle and subtalar held at 0, lateral ligaments cut.
+- **`--axis original`:** the talus stays seated (0.0°), and at 350 N as well.
+- **`inman` (default 6-DOF):** it slides about 16 mm medially under the thin medial rim and tips to 45° (KNOWN). The same mechanism drives the trapdoor result: 26° of talar tilt and the ATFL and CFL over their failure loads.
+- **A flat-topped trochlea's limit:** it can resist tilt only up to about load × half-width (4.9 N·m at 350 N, 9.8 N·m at 700 N). Beyond that, only the ligaments hold the talus.
+
+Three fixes were tried on the `inman` build (unloaded tilt at 1.5 N·m for intact / ATFL / +CFL / +PTFL cut; Rasmussen 6/11/19/46°):
+
+| Change | Unloaded tilt | Internal rotation, intact → ATFL cut (Rasmussen 7 → 18°) | 700 N, lateral cut | Trapdoor 24°: tilt, ATFL, CFL |
+|---|---|---|---|---|
+| Current thin rim (0.85–1.0 R) | 8.7/9.9/27.8/40.1° | 6.5 → 17.6° | 45° (dislocated) | 26.4°, 189 N, 442 N |
+| Medial facet to 0.70 R | 7.6/7.7/28.5/37.4° | 2.5 → 2.6° (locked) | 0.0° | 29.8°, 236 N, 524 N |
+| Medial facet 0.70 R, both facets short front to back | 8.3/9.3/27.8/40.1° | 6.0 → 6.1° (not ligament-limited) | 0.0° | — |
+| Medial-lateral slide limited to ±3 mm | 8.7/9.9/11.1/11.1° | 6.5 → 12.4° | 0.0° (−6° at 3 N·m) | 16.8°, 79 N, 364 N |
+
+Each fix trades one benchmark for another. The idealised cylinder-and-plates mortise cannot give both the unloaded laxity of Rasmussen's sectioned ankles and the loaded stability Stormont measured. The real joint gets both from features the model lacks: the talus pivots about the medial malleolus, the trochlea is wider in front, and the fibula moves. The facet front-to-back lengths are now parameters (`medial_facet_ap_half`, `lateral_facet_ap_half`), left at their previous values.
+
 ## Experimental: trapdoor rig (`landing.py`, `ligasys-sprain`)
 
 A sudden-inversion (trapdoor) test, as used in sprain and peroneal-reflex studies. The leg stands on a platform hinged at the foot's medial border; when released, the lateral side drops to a stop (24° by default).
