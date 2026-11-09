@@ -14,14 +14,24 @@ overlaps the fibula, and MuJoCo collides meshes as convex hulls, which
 would fill the concave mortise. So the joint surfaces are built from
 primitives arranged around the model's own ankle axis:
 
-* talar trochlea: a cylinder coaxial with the ankle axis;
+* talar trochlea: a body of revolution about the ankle axis, wider
+  anteriorly (its lateral end inclined by the measured anterior-posterior
+  width difference);
 * tibial plafond: flat plates tangent to a coaxial arc (radius from the
   tibia mesh);
-* medial and lateral malleolar facets: plates perpendicular to the axis.
+* medial malleolus: a plate against a small sphere on the talus near the
+  top-medial corner (the convex medial facet), so the talus pivots about
+  the medial malleolus and cannot slide medially;
+* lateral malleolus: a plate inclined to match the trochlea, carried with
+  the lateral-ligament origins on a sprung distal-fibula body (lateral
+  translation and external rotation).
 
-At zero translation/tilt/rotation the geometry is exactly congruent, so
-the joint reproduces the original hinge; under load the talus can slide,
-roll out of congruence, tilt and rotate.
+At zero translation/tilt/rotation the geometry is congruent, so the joint
+reproduces the original hinge; under load the talus can slide, roll out of
+congruence, tilt and rotate, and the fibula can give way laterally.
+The anatomical features can be switched off (medial_pivot_radius = 0,
+trochlear_width_difference = 0, fibula_mobile = False) to recover the
+earlier idealised cylinder-and-plates mortise.
 
 Every parameter carries a ``source`` tag, as in ligaments.py.
 """
@@ -81,7 +91,48 @@ PARAMS = {
     # and nearly insensitive to the value (6.3-6.6 deg intact over 0.04-0.1 s).
     # 0.08 s is twice the threshold; it is not fitted to Rasmussen's numbers.
     "malleolar_solref_timeconst": (0.08, "s", "tuned: 2x the value that unlocks axial rotation (see note)"),
+    # ---- anatomical mortise features (0 / False = off: idealised mortise) ----
+    # Medial pivot: the medial talar facet is convex (comma-shaped) and rides on
+    # the flat medial malleolar facet. Modelled as a sphere on the talus at the
+    # trochlea's medial end, against a medial plate covering the anatomical span.
+    # A sphere on a plane allows tilt and axial rotation about its centre but no
+    # medial slide, so the talus pivots about the medial malleolus.
+    "medial_pivot_radius": (0.006, "m", "assumed: radius of the convex medial facet's contact"),
+    # Height of the pivot sphere's centre above the ankle axis, in R. Clinical
+    # talar tilt opens laterally about the top-medial corner of the mortise.
+    "medial_pivot_height": (0.7, "R", "assumed: near the top-medial corner; at 0 R (mid-height) tilt and rotation "
+                                     "lock at ~3 deg whatever is cut"),
+    "medial_pivot_facet_span": ((-0.3, 1.0), "R", "anatomical: upper third to half of the talar side"),
+    # Trochlear taper: the trochlea is wider anteriorly than posteriorly. The
+    # width difference is spread over the plafond arc's chord and applied on the
+    # lateral side only (lateral facet and lateral malleolus inclined to match at
+    # neutral): ~9 deg on the Inman build. Wedging in dorsiflexion pushes the
+    # mobile fibula laterally; the narrow posterior part leaves room in PF.
+    "trochlear_width_difference": (0.0047, "m", "measured: CT talar-dome morphometry, J Orthop Surg Res 2017, "
+                                               "anterior 29.9 vs posterior 25.2 mm (search summary)"),
+    # Mobile fibula: the lateral malleolus (facet plate and lateral-ligament
+    # origins) on its own body, sprung to the tibia: lateral translation along
+    # the ankle axis and external rotation about the vertical.
+    "fibula_mobile": (True, "-", "on"),
+    "fibula_mass": (0.25, "kg", "assumed: distal part of a ~0.6 kg fibula"),
+    # Stiffnesses are assumed, bounded by weight-bearing fibular travel of about
+    # 1.7 mm side to side and 9 deg of rotation over activities (in vivo
+    # stereoradiography, search summary). Syndesmosis stiffness data still wanted.
+    "fibula_ml_stiffness": (1.0e5, "N/m", "assumed"),
+    "fibula_ml_damping": (500.0, "N*s/m", "assumed"),
+    "fibula_er_stiffness": (20.0, "N*m/rad", "assumed"),
+    "fibula_er_damping": (0.5, "N*m*s/rad", "assumed"),
+    # With the anatomical features the malleolar plates no longer need the tuned
+    # compliance above: the sphere pivot and the mobile fibula free axial
+    # rotation (ligament-limited: 9.4 -> 20.7 deg with the ATFL cut), and stiff
+    # plates keep the talus seated at 350 N as well as 700 N. Both use the
+    # default cartilage contact; None falls back to malleolar_solref_timeconst
+    # (the idealised mortise).
+    "lateral_solref_timeconst": (0.004, "s", "default contact (see note)"),
+    "medial_solref_timeconst": (0.004, "s", "default contact (see note)"),
 }
+
+LATERAL_LIGAMENTS = ("ATFL_r", "ATFLi_r", "CFL_r", "PTFL_r")  # fibular origins (site <name>-P1)
 
 # Contact: frictionless (cartilage friction is ~0.01 or less), stiff and
 # well damped. solref/solimp tuned so a body-weight axial load gives
@@ -194,12 +245,39 @@ def add_joint(model: ET.Element, femur: ET.Element, mesh_dir: Path) -> None:
     gap = _p("clearance")
     plate_t = 0.001                                      # plate half-thickness
 
-    # Talar trochlea: cylinder on the ankle axis.
+    r_piv = _p("medial_pivot_radius")
+    taper = _p("trochlear_width_difference") / (2 * R * math.sin(math.radians(_p("plafond_arc_deg"))))
+    sol = {s: _p(f"{s}_solref_timeconst") or _p("malleolar_solref_timeconst") for s in ("lateral", "medial")}
+
+    # Talar trochlea: cylinder on the ankle axis, or (with a taper) a convex mesh
+    # whose lateral end is inclined so the trochlea is wider anteriorly.
     first_body = next((i for i, c in enumerate(talus) if c.tag == "body"), len(talus))
-    talus.insert(first_body, ET.Element("geom", {
-        "name": "talar_trochlea_r", "class": "cartilage", "type": "cylinder",
-        "size": f"{R - gap:.6g}", "fromto": _fmt(np.r_[axis_pt - hw * a, axis_pt + hw * a]),
-        "contype": "2", "conaffinity": "0"}))
+    if taper == 0.0:
+        talus.insert(first_body, ET.Element("geom", {
+            "name": "talar_trochlea_r", "class": "cartilage", "type": "cylinder",
+            "size": f"{R - gap:.6g}", "fromto": _fmt(np.r_[axis_pt - hw * a, axis_pt + hw * a]),
+            "contype": "2", "conaffinity": "0"}))
+    else:
+        verts = []
+        n_seg = 64
+        r_vert = (R - gap) / math.cos(math.pi / n_seg)   # circumscribed: the polygon's faces touch R - gap
+        for k in range(n_seg):
+            phi = 2 * math.pi * k / n_seg
+            rad = r_vert * (math.cos(phi) * e2 + math.sin(phi) * e1)
+            x_ant = (R - gap) * math.sin(phi)
+            verts += [axis_pt + rad - hw * a, axis_pt + rad + (hw + taper * x_ant) * a]
+        asset = model.find("asset")
+        ET.SubElement(asset, "mesh", {"name": "talar_trochlea_mesh_r",
+                                      "vertex": " ".join(_fmt(v) for v in verts)})
+        talus.insert(first_body, ET.Element("geom", {
+            "name": "talar_trochlea_r", "class": "cartilage", "type": "mesh", "mesh": "talar_trochlea_mesh_r",
+            "contype": "2", "conaffinity": "0"}))
+    if r_piv > 0:
+        # Convex medial facet: collides only with the medial malleolus (bit 8).
+        talus.insert(first_body, ET.Element("geom", {
+            "name": "talar_medial_facet_r", "class": "cartilage", "type": "sphere", "size": f"{r_piv:.6g}",
+            "pos": _fmt(axis_pt - (hw - r_piv) * a + _p("medial_pivot_height") * R * e2),
+            "contype": "8", "conaffinity": "0"}))
 
     # Tibial plafond: plates tangent to a coaxial arc; malleolar facets: plates
     # normal to the axis. All in the tibia frame, centred on the axis point.
@@ -219,16 +297,51 @@ def add_joint(model: ET.Element, femur: ET.Element, mesh_dir: Path) -> None:
             "xyaxes": _fmt(np.r_[t, a]), "contype": "0", "conaffinity": "2"}))
     # Malleolar facets: plates normal to the axis covering part of each side of
     # the trochlea (see *_facet_span).
+    lateral_plate = None
     for side, sign in (("lateral", +1), ("medial", -1)):
-        lo, hi = _p(f"{side}_facet_span")
-        geoms.append(ET.Element("geom", {
+        lo, hi = _p("medial_pivot_facet_span") if (side == "medial" and r_piv > 0) else _p(f"{side}_facet_span")
+        x_axis = e1 + (taper * a if side == "lateral" else 0.0)
+        x_axis = x_axis / np.linalg.norm(x_axis)
+        g = ET.Element("geom", {
             "name": f"malleolus_{side}_r", "class": "cartilage", "type": "box",
             "size": _fmt([R * _p(f"{side}_facet_ap_half"), R * (hi - lo) / 2, plate_t]),
             "pos": _fmt(centre + sign * (hw + gap + plate_t) * a + R * (hi + lo) / 2 * e2),
-            "xyaxes": _fmt(np.r_[e1, e2]), "contype": "0", "conaffinity": "2",
-            "solref": f"{_p('malleolar_solref_timeconst'):g} 1"}))
+            "xyaxes": _fmt(np.r_[x_axis, e2]), "contype": "0",
+            "conaffinity": "8" if (side == "medial" and r_piv > 0) else "2",
+            "solref": f"{sol[side]:g} 1"})
+        if side == "lateral":
+            lateral_plate = g
+        geoms.append(g)
     for k, g in enumerate(geoms):
         tibia.insert(first_body + k, g)
+
+    # Mobile fibula: move the lateral facet plate and the lateral-ligament
+    # origins onto a sprung body at the lateral malleolus.
+    if _p("fibula_mobile"):
+        f_origin = centre + (hw + gap) * a
+        fib = ET.Element("body", {"name": "fibula_distal_r", "pos": _fmt(f_origin)})
+        # Inertia: the distal fibula (~0.25 kg) as the spring's moving mass. With 50 g the 100 N/mm spring's
+        # period (~4 ms) approached the 2 ms time step and the simulation diverged.
+        ET.SubElement(fib, "inertial", pos="0 0 0", mass=f"{_p('fibula_mass'):g}", diaginertia="2e-4 2e-4 2e-4")
+        ET.SubElement(fib, "joint", {
+            "name": "fibula_ml_r", "type": "slide", "pos": "0 0 0", "axis": _fmt(a), "range": "-0.004 0.004",
+            "stiffness": f"{_p('fibula_ml_stiffness'):g}", "damping": f"{_p('fibula_ml_damping'):g}",
+            "armature": "0.05"})
+        ET.SubElement(fib, "joint", {
+            "name": "fibula_er_r", "type": "hinge", "pos": "0 0 0", "axis": "0 1 0", "range": "-0.2 0.2",
+            "stiffness": f"{_p('fibula_er_stiffness'):g}", "damping": f"{_p('fibula_er_damping'):g}",
+            "armature": "0.0001"})
+        tibia.remove(lateral_plate)
+        p0 = np.array([float(c) for c in lateral_plate.get("pos").split()])
+        lateral_plate.set("pos", _fmt(p0 - f_origin))
+        fib.append(lateral_plate)
+        for site in list(tibia.findall("site")):
+            if site.get("name") in {f"{n}-P1" for n in LATERAL_LIGAMENTS}:
+                tibia.remove(site)
+                ps = np.array([float(c) for c in site.get("pos").split()])
+                site.set("pos", _fmt(ps - f_origin))
+                fib.insert(0, site)
+        tibia.append(fib)
 
     # ---- options and contact pairs -----------------------------------------
     # The talus is a child of the tibia, and MuJoCo filters parent-child
