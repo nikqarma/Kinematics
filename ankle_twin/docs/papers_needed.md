@@ -45,6 +45,8 @@ Findings and model comparison are in `docs/lateral_ligament_literature.md`.
 | A | Ozeki S. et al. (2006) Ankle ligament tensile forces at the end points of passive circumferential rotating motion. *Foot Ankle Int* 27(11):965-969 | abstract only | Peak ATFL/CFL/PTFL/TCL forces at end range (8 cadavers): ATFL 108-130 N in supination + PF |
 | A | Robotic ATFL in-situ force under inversion / internal-rotation torque, *Foot Ankle Orthop* 2018 | not reached (DOAJ 403) | ATFL force vs applied torque, a direct check on talar-tilt load sharing |
 | A | Bahr R. et al. (1998) *Knee Surg Sports Traumatol Arthrosc* 6:115-121 | wanted | ATFL/CFL forces across positions with 375 N axial compression (weight-bearing tilt behaviour) |
+| A | Stormont D.M., Morrey B.F., An K.-N., Cass J.R. (1985) Stability of the loaded ankle. *Am J Sports Med* 13(5):295-300 | abstract only | Under physiological load the articular surfaces give 100% of inversion-eversion stability (30% of rotational). The trapdoor rig shows the model's mortise lacks this |
+| A | The role of ankle ligaments and articular geometry in stabilizing the ankle (2012, Mayo Clinic group; authors to confirm) | abstract only | Loaded ankle: articular geometry gives 100% of translational and 60% of rotational stability |
 | B | Edama M. et al. (2018) Morphological features of the ATFL by the number of fiber bundles. *Ann Anat* 216:69-74 | abstract only | Per-band length, width and angle (81 legs; two-band type 57%) |
 | B | Cordier G. et al. (2021) Connecting fibers between ATFL's inferior fascicle and CFL transmit tension between both ligaments. *Knee Surg Sports Traumatol Arthrosc* 29:2511-2516 | wanted | Whether the inferior band and CFL should share load (coupled springs) |
 | B | Talar tilt angle vs inversion torque at several torques, subtalar fixed (paper to identify) | wanted | A talocrural moment-angle curve; Rasmussen 1982 gives one point (6 deg at 1.5 N·m) |
@@ -78,8 +80,10 @@ Findings and model comparison are in `docs/lateral_ligament_literature.md`.
 | A | Fong D.T. et al. (2009) *Am J Sports Med* 37(4):822-827 | not reached (Loughborough repository 403) | Lab-captured grade I ATFL sprain: kinematics and the ~632 deg/s inversion-velocity threshold |
 | A | Kristianslund E. et al. (2011) *J Biomech* 44:2576 | not reached (NIH Brage) | Lab sprain during cutting with joint moments; peak inversion 130-180 ms after contact |
 | A | Lysdal F.G. et al. (2022) *Sports Biomech* (DOI 10.1080/14763141.2022.2035801) | abstract only (AAU copy 403) | Pooled kinematics of 24 sprains: peak inversion 67.5 deg, velocity 974 deg/s (468-1752) |
-| A | Trapdoor / tilting-platform inversion kinematics in healthy subjects (paper to identify) | wanted | Inversion angle, velocity and timing on a 20-30 deg platform: validation for the landing rig |
-| A | Peroneal reflex latency to sudden inversion (paper to identify) | wanted | Muscle response delay for the landing rig |
+| A | The peroneus reaction time during sudden inversion test: systematic review (authors to confirm) | abstract only (search summary) | Peroneus longus latency on trapdoors in healthy adults (median 63 ms; brevis 66 ms in one study). Sets the rig's reflex onset |
+| A | Peroneal reaction times and eversion motor response in healthy and unstable ankles (authors to confirm) | abstract only (search summary) | 81 subjects, 50 deg inversion: total inversion time 105-110 ms; latency similar with and without instability |
+| A | Peroneal reflex amplitude and electromechanical delay on sudden inversion (paper to identify) | wanted | How much eversion force arrives, and when; the rig's outcome depends strongly on it |
+| A | Trapdoor inversion velocity and time to peak inversion at 20-30 deg (paper to identify) | wanted | Direct validation of the rig's 416 deg/s at 24 deg |
 | B | Gehring D. et al. (2013) How to sprain your ankle: a biomechanical case report of an inversion trauma. *J Biomech* | wanted | Lab sprain kinematics and kinetics |
 | B | Fong D.T. et al. (2012) Kinematics analysis of ankle inversion ligamentous sprain injuries in sports: five cases from televised tennis competitions. *Am J Sports Med* | open access PDF located, not yet read | Video-based sprain kinematics; plantarflexion not required for a lateral sprain |
 

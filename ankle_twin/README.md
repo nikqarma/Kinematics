@@ -259,6 +259,36 @@ With the compliant mortise, the ATFL also lengthens with inversion and with inte
 
 Real articular surfaces (segmented cartilage, contact on non-convex geometry) would fix 1–3.
 
+## Experimental: trapdoor rig (`landing.py`, `ligasys-sprain`)
+
+A sudden-inversion (trapdoor) test, as used in sprain and peroneal-reflex studies. The leg stands on a platform hinged at the foot's medial border; when released, the lateral side drops to a stop (24° by default).
+- **Loading:** 37.5 kg (half of a 75 kg subject) rides at the hip, which slides vertically. The straight leg can swing in the frontal plane about the hip (hip ab/adduction, 5 N·m·s/rad damping, assumed).
+- **Foot contact:** four spheres under the sole (medial and lateral heel, 1st and 5th metatarsal heads), each a linear spring-damper of 200 N/mm and 1000 N·s/m standing in for heel pad and shoe (assumed), friction 0.9.
+- **Muscles:** passive by default. Ankle flexion is held at 0° (a co-contraction stand-in); all other joints are free. An optional peroneal "reflex" excites peroneus longus and brevis after a set latency.
+- **Outputs:** hindfoot (calcaneus-to-tibia) inversion and its velocity, subtalar angle, talar tilt and rotation, sole force, and per ligament the elastic force, damping force, strain and strain rate.
+
+```
+.venv\Scripts\python landing.py model_6dof\ankle_foot_r.xml --platform-deg 24
+```
+
+**First results (default 6-DOF build, 24°, 37.5 kg):**
+
+| Case | Hindfoot inversion | Peak velocity | Talar tilt | Subtalar | Peak ligament force (failure load) |
+|---|---|---|---|---|---|
+| Passive | 29.5° | 416°/s | 26.4° | 9.1° | ATFL 189 (132), ATFLi 193 (132), CFL 442 (368) N |
+| Peroneal excitation from 60 ms, full | 9.7° | 416°/s | 4.3° | 7.3° | CFL 114, TNL 122 (120), ITCL 535 (382) N |
+| Peroneal excitation from 60 ms, half | 10.8° | 416°/s | 5.2° | 8.0° | CFL 128, TNL 100, ITCL 517 (382) N |
+| Passive, 15° platform | 20.3° | 429°/s | 12.7° | 10.0° | ATFLi 80, CFL 183 N |
+| Passive, 10 kg | 13.3° | 99°/s | 12.4° | 4.2° | ATFLi 48, CFL 132 N |
+
+**What this shows:**
+- **Timing is realistic.** The platform reaches 24° in about 70 ms, and ligament loading starts about 60 ms after release, peaking at 140–200 ms. Peroneal latency in healthy adults is 54–66 ms, so a reflex arrives just as the ligaments start to load.
+- **Strain rates are sprain-like.** The lateral ligaments reach 300–1500 %/s, above Rochelle 2020's 100 %/s test rate, where rate effects are reported to be small. The ligament damping force is at most about 2 N.
+- **The passive result is not credible.** Healthy people stand on 24° trapdoors without injury, yet both ATFL bands and the CFL exceed their failure loads. Almost all the inversion is talar tilt (26°). Stormont 1985 found that under body-weight load the joint surfaces provide all of the ankle's inversion-eversion stability; the idealised mortise has no such load-dependent stability (see "Why it is not the default", point 2). **This is the main gap for sprain work.**
+- **The muscles decide the outcome.** Peroneal excitation at 60 ms cuts inversion from 29.5° to about 10°. At full or half excitation it then overloads the eversion restraints (ITCL, TNL). Real reflex amplitude and electromechanical delay are not yet in the model; MuJoCo's activation rises in about 10 ms.
+
+**Not yet validated:** trapdoor inversion velocity and timing, reflex amplitude, and the contact and hip parameters are all unchecked against data (see `docs/papers_needed.md`).
+
 ## Known limitations: read before using ligament forces
 
 1. **Ligament strains at end range are still too high** (default moving axis).
