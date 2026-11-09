@@ -24,6 +24,9 @@ import mujoco
 import numpy as np
 
 import couplings as CPL
+import talocrural as TC
+
+TC_HALF_WIDTH = TC.PARAMS["trochlea_half_width"][0]
 
 HERE = Path(__file__).resolve().parent
 ANKLE_XML = HERE / "model" / "ankle_foot_r.xml"
@@ -371,6 +374,7 @@ def check_six_dof(xml: Path) -> None:
 
     check_bahr1997(xml)
     check_rasmussen1982(xml)
+    check_stormont1985(xml)
     check_pellegrini2016(xml)
     check_colville1990(xml)
     check_sprain_order(xml)
@@ -476,11 +480,47 @@ def check_rasmussen1982(xml: Path) -> None:
           "talar tilt grows with each successive cut (Rasmussen)")
 
 
+def check_stormont1985(xml: Path) -> None:
+    """Loaded stability: under physiological axial load the joint surfaces alone give full inversion
+    stability (Stormont et al. 1985, Am J Sports Med 13:295-300; abstract read). Ankle and subtalar held
+    at 0, axial load under the ankle, 3 N*m inversion, lateral ligaments intact or all cut."""
+    from bench import Bench
+    lateral = ATFL + ("CFL_r", "PTFL_r")
+    hw = TC_HALF_WIDTH
+    print(f"\n  Stormont 1985 loaded stability (3 N*m inversion, ankle and subtalar held at 0):")
+    res = {}
+    for label, cuts, W in (("unloaded, intact", (), 0), ("700 N, intact", (), 700), ("700 N, lateral cut", lateral, 700),
+                           ("350 N, lateral cut", lateral, 350)):
+        rig = Bench(xml)
+        rig.cut(*cuts)
+        rig.hold(0, 0)
+        ok = rig.settle(1.5, sole_force=[0, 0, W] if W else None, foot_torque=[3, 0, 0])
+        res[label] = (np.degrees(rig.q("talus_tilt_r")), rig.q("talus_tz_r") * 1e3)
+        print(f"  {label:<20} tilt {res[label][0]:5.1f} deg  medial-lateral shift {res[label][1]:5.1f} mm"
+              + ("" if ok else "  UNSTABLE"))
+    t, z = res["700 N, lateral cut"]
+    check(abs(t) < 5 and abs(z) < 2, f"under 700 N axial load the talus stays seated with the lateral ligaments cut "
+          f"(tilt {t:.1f} deg, shift {z:.1f} mm; Stormont: articular surfaces give all inversion stability)",
+          known_reason=None if AXIS_KIND == "original" else
+          "the thin medial rim (talocrural.medial_facet_span) lets the loaded talus slide medially and tip. A taller "
+          "facet or a slide limit fixes this but locks axial rotation or caps tilt after ligament cuts; the idealised "
+          "mortise cannot give both unloaded laxity and loaded stability (README, 'Loaded stability')")
+    print(f"  NOTE  a flat-topped trochlea resists tilt up to about load x half-width ({hw * 1e3:.0f} mm): "
+          f"{350 * hw:.1f} N*m at 350 N, {700 * hw:.1f} N*m at 700 N")
+
+
 # Pellegrini et al. (2016) J Bone Joint Surg Am 98:842-848, Table II (n=16, 4 N*m,
 # 36 N axial load, intact): inversion (deg, mean and SD) attributed to the subtalar
 # joint (ankle fixed) and to the ankle (ankle freed), by flexion (+ = DF).
 PELLEGRINI2016 = {10: ((3.8, 1.4), (6.4, 2.2)), 0: ((7.2, 1.7), (10.4, 3.1)),
                   -10: ((8.0, 2.2), (13.1, 3.6)), -20: ((10.8, 2.6), (14.7, 3.4))}
+
+# Shared core (main): with the cervical ligament slack to 14 deg (Knudson 1997) nothing else stiffens the 1-DOF
+# subtalar hinge in inversion, so it rests near its 19.5 deg stop at 4 N*m. Each branch supplies that stiffness
+# its own way (ligasys-sprain: a fitted spring; research-twin: subtalar contact), where these checks pass.
+SUBTALAR_LAX_REASON = ("on the shared core the subtalar hinge has no inversion stiffness below the CL's 14 deg "
+                       "onset and sits near its 19.5 deg stop at 4 N*m; each branch adds that stiffness "
+                       "(README, 'Branches')")
 
 
 def check_pellegrini2016(xml: Path) -> None:
@@ -511,7 +551,7 @@ def check_pellegrini2016(xml: Path) -> None:
             share0 = t / (s + t)
         print(f"  {ang:+6d}{s:10.1f}{f'{sm}+/-{ss}':>13}{t:12.1f}{f'{am}+/-{asd}':>18}" + ("" if ok else "  UNSTABLE"))
     check(0.25 <= share0 <= 0.75, f"both joints carry a substantial share of hindfoot inversion at neutral "
-          f"(ankle {share0 * 100:.0f}%; Pellegrini 59%)")
+          f"(ankle {share0 * 100:.0f}%; Pellegrini 59%)", known_reason=SUBTALAR_LAX_REASON)
     s0, *_ = run(0)
     s_cfl, *_ = run(0, ("CFL_r",))
     s_int, *_ = run(0, ("CL_r", "ITCL_r"))
@@ -522,7 +562,8 @@ def check_pellegrini2016(xml: Path) -> None:
                        "36 N axial load, which seats the talocalcaneal facets. The 1-DOF hinge has no subtalar "
                        "articular contact, so it cannot stiffen under axial load (README limitation 8)")
     print(f"  subtalar at neutral: intact {s0:.1f}, CFL cut {s_cfl:.1f}, CL+ITCL cut {s_int:.1f}, all three {s_all:.1f} deg")
-    check(s_all > s0 + 2, f"cutting CFL + CL + ITCL increases subtalar inversion ({s0:.1f} -> {s_all:.1f} deg)")
+    check(s_all > s0 + 2, f"cutting CFL + CL + ITCL increases subtalar inversion ({s0:.1f} -> {s_all:.1f} deg)",
+          known_reason=SUBTALAR_LAX_REASON)
     check(s_cfl - s0 > s_int - s0,
           f"the CFL, not the cervical/interosseous ligaments, is the main subtalar restraint "
           f"(CFL cut {s_cfl - s0:+.1f} deg vs CL+ITCL cut {s_int - s0:+.1f} deg; Pellegrini: CFL +5.7-6.2, CL+ITCL n.s.)",

@@ -46,14 +46,31 @@ PARAMS = {
     "plafond_plates": (10, "-", "discretisation of the plafond arc"),
     # Malleolar facet coverage of the trochlea's sides, as fractions of the
     # dome radius measured from the axis (+ = superior).
-    # Medial: TUNED, not anatomical. A flat plate covering the anatomical
-    # medial facet (upper third to half of the talar side) jams a tilting
-    # cylinder, so inversion tilt is then set by clearance rather than by the
-    # ligaments (~1 deg regardless of sectioning). A thin superior rim lets the
-    # talus pivot about the medial plafond edge, as in a talar tilt test, and
-    # leaves medial restraint to the deltoid.
+    # Medial: TUNED, not anatomical (the anatomical facet covers the upper third
+    # to half of the talar side, i.e. down to about 0.3 R to -0.1 R here).
+    # With stiff malleolar plates a full facet jammed a tilting cylinder
+    # (~1 deg tilt whatever was cut), so it was cut back to a thin
+    # superior rim (0.85-1.0 R). That rim leaves the talus free to slide
+    # medially (up to ~16 mm) and tip under body-weight load: with 700 N axial
+    # load, 3 N*m inversion and the lateral ligaments cut it dislocates to
+    # 45 deg on the Inman axis, where Stormont 1985 found the loaded joint
+    # surfaces alone give full inversion stability (KNOWN in verify).
+    # Tried 2026-11-08, none kept (README, "Loaded stability"):
+    # - facet down to 0.75 R or lower: loaded-stable, but axial rotation locks
+    #   again (2.5 deg intact, unchanged by cutting the ATFL; Rasmussen 7 -> 18);
+    # - shorter facets front to back (medial_facet_ap_half / lateral_facet_ap_half):
+    #   rotation frees but is no longer ligament-limited;
+    # - limiting the medial-lateral slide to +-2-4 mm: loaded-stable and the
+    #   trapdoor ATFL load drops, but tilt after cutting the CFL and PTFL stops
+    #   at 8-14 deg (Rasmussen 19 and 46).
+    # The idealised cylinder-and-plates mortise cannot give both unloaded laxity
+    # and loaded stability; that needs anatomical surfaces (pivot about the
+    # medial malleolus, trochlear wedge, fibular mobility).
     "medial_facet_span": ((0.85, 1.0), "R", "tuned: avoids geometric jamming in tilt (see note)"),
     "lateral_facet_span": ((-1.2, 1.0), "R", "assumed: lateral malleolus covers near full height"),
+    # Anterior-posterior half-length of each facet plate, in R.
+    "medial_facet_ap_half": (1.1, "R", "assumed: covers the trochlea's full length"),
+    "lateral_facet_ap_half": (1.1, "R", "assumed: covers the trochlea's full length"),
     # Malleolar facet compliance (MuJoCo contact solref time constant, s).
     # TUNED. With the stiff default (0.004 s) the trochlear cylinder jams between
     # the flat malleolar plates in axial rotation (~85 N on each at 1.5 N*m), so
@@ -206,7 +223,7 @@ def add_joint(model: ET.Element, femur: ET.Element, mesh_dir: Path) -> None:
         lo, hi = _p(f"{side}_facet_span")
         geoms.append(ET.Element("geom", {
             "name": f"malleolus_{side}_r", "class": "cartilage", "type": "box",
-            "size": _fmt([R * 1.1, R * (hi - lo) / 2, plate_t]),
+            "size": _fmt([R * _p(f"{side}_facet_ap_half"), R * (hi - lo) / 2, plate_t]),
             "pos": _fmt(centre + sign * (hw + gap + plate_t) * a + R * (hi + lo) / 2 * e2),
             "xyaxes": _fmt(np.r_[e1, e2]), "contype": "0", "conaffinity": "2",
             "solref": f"{_p('malleolar_solref_timeconst'):g} 1"}))
