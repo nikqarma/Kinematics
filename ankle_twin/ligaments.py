@@ -54,7 +54,13 @@ REFS = {
                 "Scand 68(5):435-441 (n=8, buckle transducers; Tables 2-3, read in full text)",
     "Michels2022": "Michels F. et al. (2022) The different subtalar ligaments show significant differences in "
                    "their mechanical properties. Foot Ankle Surg 28(7):1014-1020 (18 pairs, bone-ligament-bone "
-                   "uniaxial tests; abstract values - full text not yet checked)",
+                   "uniaxial tests; accepted manuscript read: stiffness, failure load, elongation at failure "
+                   "CL 3.0 +/- 1.1 mm, ACaL-ITCL 2.6 +/- 0.8 mm; in-situ lengths CL 13.9 +/- 2.1 mm, ACaL-ITCL "
+                   "11.0 +/- 2.5 mm, measured at maximal passive tension with the ankle neutral)",
+    "Knudson1997": "Knudson G.A., Kitaoka H.B., Lu C.-L., Luo Z.P., An K.-N. (1997) Subtalar joint stability: "
+                   "talocalcaneal interosseous ligament function studied in cadaver specimens. Acta Orthop Scand "
+                   "68(5):442-446 (n=6, tibia and talus fixed, ~0.2 N*m circumferential load on the calcaneus, "
+                   "no axial load; full text)",
     "Poonja2017": "Poonja A.J. et al. (2017) Anatomical study of the cervical and interosseous talocalcaneal "
                   "ligaments of the foot with surgical relevance. Cureus 9(6):e1382 (n=26, formalin-fixed; "
                   "full text)",
@@ -176,25 +182,32 @@ LIGAMENTS = [
                    "inferior of the intercollicular groove"),
     # ---- subtalar (sinus tarsi / tarsal canal) ----------------------------
     # Without these, subtalar inversion was stopped only by the CFL and the hard
-    # +-19.5 deg joint limit: every inversion test ended on the limit. Taut
-    # onsets have no published zero-strain reference, so both are taut from
-    # subtalar neutral (an assumption).
+    # +-19.5 deg joint limit: every inversion test ended on the limit.
+    # Cervical taut onset: Knudson1997's unloaded cadaver feet rotate 13-14 +/- 7
+    # deg into supination under ~0.2 N*m before reaching a stable zone, so the
+    # subtalar ligaments are slack over that range. Their screw axis is within
+    # ~13 deg of the model's hinge, so the hinge angle is taken as that rotation.
+    # Taut from neutral (the earlier assumption) made the CL fail first in every
+    # sprain load case at ~12 deg subtalar inversion and 4-8 N*m (2026-11-07
+    # probe): its 163.5 N failure load sits only 2.6 mm (13 deg) past its onset.
     Ligament("CL_r", "cervical (talocalcaneal)", "talus_r", "calcn_r",
-             ("linear", 63.9e3), "measured: Michels2022 (63.9 +/- 38.0 N/mm)", (0.0,),
-             "assumed: taut from subtalar neutral (no zero-strain data found)",
+             ("linear", 63.9e3), "measured: Michels2022 (63.9 +/- 38.0 N/mm)", (14.0,),
+             "measured (indirect): Knudson1997 (supination stable zone at 13-14 +/- 7 deg, ~0.2 N*m)",
              failure_load=163.5, reference_length=0.0111, reference_source="Poonja2017",
              taut_joint="subtalar_angle_r",
              notes="reference length = mean of Poonja2017's anterior (8.3 mm) and posterior (14.0 mm) "
-                   "heights of a near-vertical ligament"),
+                   "heights of a near-vertical ligament. Its length at the 14 deg onset (15.8 mm) is within 1 SD "
+                   "of Michels2022's 13.9 +/- 2.1 mm measured at maximal passive tension"),
     Ligament("ITCL_r", "interosseous talocalcaneal", "talus_r", "calcn_r",
              ("linear", 150.0e3), "measured: Michels2022 (ACaL-ITCL complex, 150 +/- 51 N/mm)", (0.0,),
              "assumed: taut from subtalar neutral (no zero-strain data found)",
-             failure_load=382.5, reference_length=0.0100, reference_source="placeholder",
+             failure_load=382.5, reference_length=0.0110, reference_source="Michels2022",
              taut_joint="subtalar_angle_r",
-             notes="no published length found (Jotoku 2006 not yet checked); 10 mm placeholder sets the "
-                   "insertion. Michels2022 tested it together with the anterior capsular ligament. With "
-                   "this geometry it lengthens in eversion (the model's subtalar axis runs through the "
-                   "talar body, not the sinus tarsi); sources disagree on its direction"),
+             notes="Michels2022 tested it together with the anterior capsular ligament (ACaL-ITCL, 11.0 mm). "
+                   "With this geometry it lengthens in eversion: the model's subtalar axis runs ~11 mm "
+                   "above the tarsal canal, through the talar body. Knudson1997 found that cutting it adds "
+                   "~4 deg of supination and no pronation, i.e. the opposite direction; Smith 1958 and "
+                   "Kjaersgaard-Andersen 1988 (as cited by Knudson) put it in eversion"),
 ]
 
 
