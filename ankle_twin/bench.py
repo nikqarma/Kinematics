@@ -88,7 +88,12 @@ class Bench:
                ankle_ramp_deg: tuple[float, float] | None = None, ctrl: dict[str, float] | None = None) -> bool:
         """Simulate with constant external loads (world frame, N / N*m). Returns False if unstable."""
         t0 = self.d.time
+        bad0 = self.d.warning[mujoco.mjtWarning.mjWARN_BADQACC].number
         while self.d.time - t0 < seconds:
+            # MuJoCo resets the state (and the clock) when it hits an instability; a clock check
+            # alone misses that when t0 is 0, and the loop would rerun the same interval forever.
+            if self.d.warning[mujoco.mjtWarning.mjWARN_BADQACC].number > bad0:
+                return False
             if ankle_ramp_deg is not None:
                 a0, a1 = ankle_ramp_deg
                 s = min(1.0, (self.d.time - t0) / (0.6 * seconds))

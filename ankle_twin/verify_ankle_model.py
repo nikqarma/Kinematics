@@ -77,10 +77,6 @@ KNOWN_DISCREPANCIES = {
     ("perbrev_r is a plantarflexor", "inman"):
         "the Inman-registered axis gives peroneus brevis a ~+1 mm (dorsiflexion) moment arm at neutral; "
         "Klein 1996 measured -9.9 mm (README, 'Ankle axis')",
-    ("inversion lengthens the CFL at every flexion angle (Colville)", "original"):
-        "on the original axis the 6-DOF talus subluxes anteriorly at 20 deg DF with no load (3-8 mm, held by "
-        "PTFL/dPTTL), so the unloaded baseline is displaced and inversion reseats it. With the stiff mortise this "
-        "check passed only because 3 N*m dislocated the talus 12.6 mm (README, 6-DOF section)",
     ("plantarflexed supination tears an ATFL band first (TNL_r, ATFL_r, ATFL_r)", "original"):
         "on the original axis, holding the ankle at 30 deg PF with no external load already stretches the "
         "tibionavicular past its 120 N failure load (159 N; CFL 137, dATTL 190, dPTTL 164 N). The axis placement "
@@ -319,15 +315,24 @@ def check_six_dof(xml: Path) -> None:
                             ("forefoot pull down 100 N (plantarflexes)", [0.17, 0.02, 0.0], [0, 0, -100])):
         rig = Bench(xml)
         calcn = rig.calcn
-        worst = 0.0  # max talar translation during the load
+        # The load is applied as a step to a light, free foot, which swings into the ankle's range stop
+        # within ~40 ms and overshoots it; that impact is reported, not asserted. Seating is asserted
+        # once the foot has settled (after 0.3 s).
+        worst, impact = 0.0, 0.0
         while rig.d.time < 1.5:
             rig.d.qfrc_applied[:] = 0
             p = rig.d.xpos[calcn] + rig.d.xmat[calcn].reshape(3, 3) @ np.array(local)
             mujoco.mj_applyFT(rig.m, rig.d, np.array(F, float), np.zeros(3), p, calcn, rig.d.qfrc_applied)
             mujoco.mj_step(rig.m, rig.d)
-            worst = max(worst, max(abs(v) for v in talus(rig)[:3]))
+            tr = max(abs(v) for v in talus(rig)[:3])
+            if rig.d.time > 0.3:
+                worst = max(worst, tr)
+            else:
+                impact = max(impact, tr)
         check(worst < 2e-3, f"{label}, foot free: talus stays seated "
-              f"(max translation {worst * 1e3:.2f} mm, ankle {deg(rig.q('ankle_angle_r')):.1f} deg)")
+              f"(max translation {worst * 1e3:.2f} mm once settled, ankle {deg(rig.q('ankle_angle_r')):.1f} deg)")
+        print(f"  NOTE  {label}: peak translation {impact * 1e3:.2f} mm in the first 0.3 s "
+              f"(the foot swinging into the range stop)")
     # A pure generalized torque on ankle_angle_r with no joint compression is not
     # a physical load; report what it does rather than assert.
     rig = Bench(xml)
@@ -506,10 +511,9 @@ def check_stormont1985(xml: Path) -> None:
     t, z = res["700 N, lateral cut"]
     check(abs(t) < 5 and abs(z) < 2, f"under 700 N axial load the talus stays seated with the lateral ligaments cut "
           f"(tilt {t:.1f} deg, shift {z:.1f} mm; Stormont: articular surfaces give all inversion stability)",
-          known_reason=None if AXIS_KIND == "original" else
-          "the thin medial rim (talocrural.medial_facet_span) lets the loaded talus slide medially and tip. A taller "
-          "facet or a slide limit fixes this but locks axial rotation or caps tilt after ligament cuts; the idealised "
-          "mortise cannot give both unloaded laxity and loaded stability (README, 'Loaded stability')")
+          known_reason=None if TC.PARAMS["medial_pivot_radius"][0] > 0 or AXIS_KIND == "original" else
+          "idealised mortise (anatomical features off): the thin medial rim lets the loaded talus slide medially and "
+          "tip (README, 'Anatomical mortise')")
     print(f"  NOTE  a flat-topped trochlea resists tilt up to about load x half-width ({hw * 1e3:.0f} mm): "
           f"{350 * hw:.1f} N*m at 350 N, {700 * hw:.1f} N*m at 700 N")
 
