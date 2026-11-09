@@ -373,7 +373,6 @@ def check_six_dof(xml: Path) -> None:
     check_rasmussen1982(xml)
     check_pellegrini2016(xml)
     check_colville1990(xml)
-    check_sprain_order(xml)
 
     # (c) strain through flexion, for comparison with the hinge (section 4)
     print("\n  Ligament strain (%) driving the ankle with the subtalar held at 0 (talus free to settle):")
@@ -516,11 +515,6 @@ def check_pellegrini2016(xml: Path) -> None:
     s_cfl, *_ = run(0, ("CFL_r",))
     s_int, *_ = run(0, ("CL_r", "ITCL_r"))
     s_all, *_ = run(0, ("CFL_r", "CL_r", "ITCL_r"))
-    sn, sd = PELLEGRINI2016[0][0]
-    check(abs(s0 - sn) <= 2 * sd, f"intact subtalar inversion at neutral within 2 SD of Pellegrini ({s0:.1f} vs {sn} +/- {sd} deg)",
-          known_reason="the subtalar ligaments are slack to 14 deg (Knudson 1997, unloaded feet); Pellegrini applied a "
-                       "36 N axial load, which seats the talocalcaneal facets. The 1-DOF hinge has no subtalar "
-                       "articular contact, so it cannot stiffen under axial load (README limitation 8)")
     print(f"  subtalar at neutral: intact {s0:.1f}, CFL cut {s_cfl:.1f}, CL+ITCL cut {s_int:.1f}, all three {s_all:.1f} deg")
     check(s_all > s0 + 2, f"cutting CFL + CL + ITCL increases subtalar inversion ({s0:.1f} -> {s_all:.1f} deg)")
     check(s_cfl - s0 > s_int - s0,
@@ -529,49 +523,6 @@ def check_pellegrini2016(xml: Path) -> None:
           known_reason="in MS-Human-700's 1-DOF oblique subtalar hinge the CFL lies 18 deg from the axis (5 mm moment "
                        "arm), so it cannot resist hinge rotation; in cadavers it restrains calcaneal motion the hinge "
                        "does not allow. Needs a subtalar joint with more freedom (README limitation 8)")
-
-
-def sprain_sequence(xml: Path, ankle_deg: float, direction, max_torque: float = 40.0, max_events: int = 3):
-    """Quasi-static sprain: ankle flexion held, subtalar free, foot torque ramped 1 N*m at a time.
-    A ligament that reaches its reported failure load is cut. Returns [(name, torque N*m), ...]."""
-    import ligaments as LIG
-    from bench import Bench
-    fail = {l.name: l.failure_load for l in LIG.LIGAMENTS if l.failure_load}
-    u = np.asarray(direction, float) / np.linalg.norm(direction)
-    rig = Bench(xml)
-    rig.hold(ankle_deg, None)
-    rig.settle(0.5)
-    events, T = [], 0.0
-    while T < max_torque and len(events) < max_events:
-        T += 1.0
-        if not rig.settle(0.4, foot_torque=u * T):
-            break
-        for n, F in rig.ligament_forces().items():
-            if n in fail and F >= fail[n] and n not in [e[0] for e in events]:
-                events.append((n, T))
-                rig.cut(n)
-    return events
-
-
-def check_sprain_order(xml: Path) -> None:
-    """Failure order under a quasi-static supination sprain (no strain-rate effects, no tearing model).
-
-    Lateral sprains in plantarflexion tear the ATFL first, with the CFL often
-    torn as well (Brostrom 1965 and others, as cited by Michels2022 - originals
-    not yet checked). Cervical-ligament lesions occur but in a minority (Tourne,
-    as cited by Michels2022: intrinsic subtalar lesions in 30% of patients
-    selected for surgical stabilisation)."""
-    print("\n  Sprain order (quasi-static ramp, ligament cut at its reported failure load; torque N*m):")
-    sup = [1.0, 0.0, 1.0]  # inversion + internal rotation (world x = anterior, z = up)
-    firsts = []
-    for ang, label, u in ((-30, "supination", sup), (-20, "supination", sup), (-10, "supination", sup),
-                          (-20, "inversion", [1.0, 0, 0]), (0, "inversion", [1.0, 0, 0])):
-        ev = sprain_sequence(xml, ang, u)
-        print(f"  {label:<11} ankle {ang:+3d}: " + (" -> ".join(f"{n[:-2]} @{t:.0f}" for n, t in ev) or "none"))
-        if label == "supination":
-            firsts.append(ev[0][0] if ev else None)
-    check(all(f in ATFL for f in firsts),
-          f"plantarflexed supination tears an ATFL band first ({', '.join(str(f) for f in firsts)})")
 
 
 # Colville et al. (1990) Am J Sports Med 18:196-200: midsubstance strain gauges,

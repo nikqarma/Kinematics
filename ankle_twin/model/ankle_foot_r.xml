@@ -385,7 +385,7 @@
       <site site="dPTTL_r-P1" />
       <site site="dPTTL_r-P2" />
     </spatial>
-    <spatial name="CL_r" class="ligament" stiffness="63900" springlength="0 0.0158157">
+    <spatial name="CL_r" class="ligament" stiffness="63900" springlength="0 0.0122868">
       <site site="CL_r-P1" />
       <site site="CL_r-P2" />
     </spatial>
