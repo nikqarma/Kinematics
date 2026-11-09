@@ -520,6 +520,13 @@ def check_stormont1985(xml: Path) -> None:
 PELLEGRINI2016 = {10: ((3.8, 1.4), (6.4, 2.2)), 0: ((7.2, 1.7), (10.4, 3.1)),
                   -10: ((8.0, 2.2), (13.1, 3.6)), -20: ((10.8, 2.6), (14.7, 3.4))}
 
+# Shared core (main): with the cervical ligament slack to 14 deg (Knudson 1997) nothing else stiffens the 1-DOF
+# subtalar hinge in inversion, so it rests near its 19.5 deg stop at 4 N*m. Each branch supplies that stiffness
+# its own way (ligasys-sprain: a fitted spring; research-twin: subtalar contact), where these checks pass.
+SUBTALAR_LAX_REASON = ("on the shared core the subtalar hinge has no inversion stiffness below the CL's 14 deg "
+                       "onset and sits near its 19.5 deg stop at 4 N*m; each branch adds that stiffness "
+                       "(README, 'Branches')")
+
 
 def check_pellegrini2016(xml: Path) -> None:
     """Benchmark: subtalar vs ankle share of hindfoot inversion, and which ligament restrains the subtalar joint.
@@ -549,7 +556,7 @@ def check_pellegrini2016(xml: Path) -> None:
             share0 = t / (s + t)
         print(f"  {ang:+6d}{s:10.1f}{f'{sm}+/-{ss}':>13}{t:12.1f}{f'{am}+/-{asd}':>18}" + ("" if ok else "  UNSTABLE"))
     check(0.25 <= share0 <= 0.75, f"both joints carry a substantial share of hindfoot inversion at neutral "
-          f"(ankle {share0 * 100:.0f}%; Pellegrini 59%)")
+          f"(ankle {share0 * 100:.0f}%; Pellegrini 59%)", known_reason=SUBTALAR_LAX_REASON)
     s0, *_ = run(0)
     s_cfl, *_ = run(0, ("CFL_r",))
     s_int, *_ = run(0, ("CL_r", "ITCL_r"))
@@ -561,7 +568,8 @@ def check_pellegrini2016(xml: Path) -> None:
     check(abs(s0 - sn) <= 2 * sd, f"intact subtalar inversion at neutral within 2 SD of Pellegrini "
           f"({s0:.1f} vs {sn} +/- {sd} deg; calibration target)")
     print(f"  subtalar at neutral: intact {s0:.1f}, CFL cut {s_cfl:.1f}, CL+ITCL cut {s_int:.1f}, all three {s_all:.1f} deg")
-    check(s_all > s0 + 2, f"cutting CFL + CL + ITCL increases subtalar inversion ({s0:.1f} -> {s_all:.1f} deg)")
+    check(s_all > s0 + 2, f"cutting CFL + CL + ITCL increases subtalar inversion ({s0:.1f} -> {s_all:.1f} deg)",
+          known_reason=SUBTALAR_LAX_REASON)
     check(s_cfl - s0 > s_int - s0,
           f"the CFL, not the cervical/interosseous ligaments, is the main subtalar restraint "
           f"(CFL cut {s_cfl - s0:+.1f} deg vs CL+ITCL cut {s_int - s0:+.1f} deg; Pellegrini: CFL +5.7-6.2, CL+ITCL n.s.)",
