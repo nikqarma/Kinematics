@@ -117,7 +117,7 @@
           <site name="fhl_r-P2" pos="-0.0242 -0.3671 -0.0076" />
           <site name="ATFL_r-P1" class="ligament" pos="-0.006381 -0.390453 0.025794" />
           <site name="ATFLi_r-P1" class="ligament" pos="-0.004985 -0.397859 0.018958" />
-          <site name="CFL_r-P1" class="ligament" pos="-0.004985 -0.397859 0.018958" />
+          <site name="CFL_r-P1" class="ligament" pos="-0.0162449 -0.404907 0.0224839" />
           <site name="PTFL_r-P1" class="ligament" pos="-0.021445 -0.399877 0.018225" />
           <site name="TNL_r-P1" class="ligament" pos="0.0136485 -0.382514 -0.0171525" />
           <site name="TSL_r-P1" class="ligament" pos="0.0106485 -0.380514 -0.0210525" />
@@ -166,7 +166,7 @@
               <site name="tibant_r-P4" pos="0.1166 0.0178 -0.0305" />
               <site name="tibpost_r-P3" pos="0.0417 0.0334 -0.0286" />
               <site name="tibpost_r-P4" pos="0.0772 0.0159 -0.0281" />
-              <site name="CFL_r-P2" class="ligament" pos="0.036714 0.021125 0.019003" />
+              <site name="CFL_r-P2" class="ligament" pos="0.021741 0.014054 0.010903" />
               <site name="TNL_r-P2" class="ligament" pos="0.085433 0.034545 -0.039235" />
               <site name="TSL_r-P2" class="ligament" pos="0.0731602 0.0372006 -0.0241124" />
               <site name="TCL_r-P2" class="ligament" pos="0.0606225 0.0273378 -0.0202203" />
@@ -297,7 +297,7 @@
       <site site="ATFLi_r-P1" />
       <site site="ATFLi_r-P2" />
     </spatial>
-    <spatial name="CFL_r" class="ligament" stiffness="45800" springlength="0 0.0298054">
+    <spatial name="CFL_r" class="ligament" stiffness="45800" springlength="0 0.0329735">
       <site site="CFL_r-P1" />
       <site site="CFL_r-P2" />
     </spatial>
