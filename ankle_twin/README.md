@@ -130,7 +130,7 @@ To view the model, drag `model/ankle_foot_r.xml` into MuJoCo's `simulate` viewer
 | Ligament springs are tension-only | matches k·max(0, L−L0) to 4e-15 N·m |
 | Exponential spring stacks | follow the published Funk curves within 5–14% over 0.5–10% strain |
 | Ligament lengths at neutral | TSL, TCL, dATTL, dPTTL equal Campbell 2014; TNL −6%; PTFL matches Ozeki 2002, CFL +4%; ATFL −29% |
-| Ligament length trends | ATFL, TNL, TSL, dATTL lengthen in plantarflexion; PTFL in dorsiflexion; CFL and CL in inversion; TNL, TSL, TCL in eversion (ITCL not asserted; see "Subtalar ligaments") |
+| Ligament length trends | ATFL, TNL, TSL, dATTL lengthen in plantarflexion; PTFL and CFL in dorsiflexion; CL in inversion (the CFL's change in subtalar inversion is reported, not asserted: it depends on the ligament's angle, Edama 2017); TNL, TSL, TCL in eversion (ITCL not asserted; see "Subtalar ligaments") |
 | Passive behaviour | the hanging foot rests at about 14° PF instead of on the −39° stop; ligaments resist both end ranges (2.7 N·m at 25° PF, 0.9 N·m at 25° DF) |
 | Bahr 1997 benchmark (6-DOF builds) | ATFL and CFL force increases under the talar tilt (5.7 N·m) and drawer (80 N) tests at 10° DF – 20° PF; flexion trends asserted, magnitudes reported (see the 6-DOF section) |
 | ATFL bands | superior band lengthens 4.8–5.8 mm from 20° DF to 30° PF; inferior band changes ≤ 1.2 mm (Vega 2020: 6.6 mm and isometric) |
