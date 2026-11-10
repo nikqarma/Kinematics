@@ -15,8 +15,8 @@ would fill the concave mortise. So the joint surfaces are built from
 primitives arranged around the model's own ankle axis:
 
 * talar trochlea: a body of revolution about the ankle axis, wider
-  anteriorly (its lateral end inclined by the measured anterior-posterior
-  width difference);
+  anteriorly (its lateral end inclined by the anterior-posterior width
+  difference measured by Hayes et al. 2006);
 * tibial plafond: flat plates tangent to a coaxial arc (radius from the
   tibia mesh);
 * medial malleolus: a plate against a small sphere on the talus near the
@@ -103,13 +103,18 @@ PARAMS = {
     "medial_pivot_height": (0.7, "R", "assumed: near the top-medial corner; at 0 R (mid-height) tilt and rotation "
                                      "lock at ~3 deg whatever is cut"),
     "medial_pivot_facet_span": ((-0.3, 1.0), "R", "anatomical: upper third to half of the talar side"),
-    # Trochlear taper: the trochlea is wider anteriorly than posteriorly. The
-    # width difference is spread over the plafond arc's chord and applied on the
-    # lateral side only (lateral facet and lateral malleolus inclined to match at
-    # neutral): ~9 deg on the Inman build. Wedging in dorsiflexion pushes the
-    # mobile fibula laterally; the narrow posterior part leaves room in PF.
-    "trochlear_width_difference": (0.0047, "m", "measured: CT talar-dome morphometry, J Orthop Surg Res 2017, "
-                                               "anterior 29.9 vs posterior 25.2 mm (search summary)"),
+    # Trochlear taper: the trochlea is wider anteriorly than posteriorly.
+    # Hayes2006 measured the anterior and posterior widths on coronal sections
+    # rotated 30 deg either side of the dome centre, on a dome of radius 20.7 mm,
+    # so the two widths are 2 * 20.7 * sin(30 deg) = 20.7 mm apart along the
+    # dome: taper angle atan(4.7 / 20.7) = 12.8 deg. It is applied on the
+    # lateral side only (lateral facet and lateral malleolus inclined to match
+    # at neutral). Wedging in dorsiflexion pushes the mobile fibula laterally;
+    # the narrow posterior part leaves room in PF.
+    "trochlear_width_difference": (0.0047, "m", "measured: Hayes2006, anterior 29.9 +/- 2.6 vs posterior "
+                                               "25.2 +/- 3.7 mm (difference 4.7 +/- 2.6 mm)"),
+    "trochlear_width_section_deg": (30.0, "deg", "measured: Hayes2006, oblique coronal sections at +-30 deg"),
+    "trochlear_dome_radius": (0.0207, "m", "measured: Hayes2006, 20.7 +/- 2.6 mm (mid-sagittal arc)"),
     # Mobile fibula: the lateral malleolus (facet plate and lateral-ligament
     # origins) on its own body, sprung to the tibia: lateral translation along
     # the ankle axis and external rotation about the vertical.
@@ -246,7 +251,8 @@ def add_joint(model: ET.Element, femur: ET.Element, mesh_dir: Path) -> None:
     plate_t = 0.001                                      # plate half-thickness
 
     r_piv = _p("medial_pivot_radius")
-    taper = _p("trochlear_width_difference") / (2 * R * math.sin(math.radians(_p("plafond_arc_deg"))))
+    taper = _p("trochlear_width_difference") / (
+        2 * _p("trochlear_dome_radius") * math.sin(math.radians(_p("trochlear_width_section_deg"))))
     sol = {s: _p(f"{s}_solref_timeconst") or _p("malleolar_solref_timeconst") for s in ("lateral", "medial")}
 
     # Talar trochlea: cylinder on the ankle axis, or (with a taper) a convex mesh
