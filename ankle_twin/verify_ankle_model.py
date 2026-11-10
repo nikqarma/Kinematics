@@ -48,7 +48,9 @@ LIGAMENT_FUNCTION = {
     #           ankle  subtalar
     "ATFL_r":  (-1,    None),   # superior band: taut in plantarflexion; crosses talocrural only here
     "ATFLi_r": (None,  None),   # inferior band: isometric through flexion (Vega 2020), checked separately
-    "CFL_r":   (None,  +1),     # taut in inversion; biphasic in flexion (Takao 2021), see note
+    "CFL_r":   (+1,    None),   # taut in dorsiflexion (Ozeki 2002, Colville 1990). About the subtalar axis its
+                                # length change depends on its angle to the fibula (Edama 2017: 30-50 deg
+                                # ligaments do not lengthen in inversion; Sarrafian), so that is reported only
     "PTFL_r":  (+1,    None),   # taut in dorsiflexion
     "TNL_r":   (-1,    -1),     # tenses from 10 deg PF (Takao 2020); superficial deltoid resists eversion
     "TSL_r":   (-1,    -1),     # tenses from 15 deg PF (Takao 2020); most strained in eversion
