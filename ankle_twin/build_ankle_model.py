@@ -32,6 +32,7 @@ import numpy as np
 import ankle_axis as AX
 import couplings as CPL
 import ligaments as LIG
+import subtalar as ST
 import talocrural as TC
 
 HERE = Path(__file__).resolve().parent
@@ -194,7 +195,8 @@ def set_ankle_axis(model: ET.Element, femur: ET.Element, kind: str, mesh_dir: Pa
 
 
 def build(src: Path, out_dir: Path, knee_angle_deg: float | None, ligaments: bool = True,
-          six_dof: bool = False, axis: str = "moving", swing_deg: float = AX.SWING_DEG) -> Path:
+          six_dof: bool = False, axis: str = "moving", swing_deg: float = AX.SWING_DEG,
+          subtalar: str = "contact") -> Path:
     if six_dof and axis == "moving":
         raise ValueError("the 6-DOF contact joint needs a fixed axis (its trochlea is a cylinder about it): "
                          "use axis='inman' or 'original'")
@@ -299,10 +301,12 @@ def build(src: Path, out_dir: Path, knee_angle_deg: float | None, ligaments: boo
     set_ankle_axis(model, femur, axis, mesh_dir, swing_deg)
     if ligaments:
         add_ligaments(model, femur, mesh_dir)
-        subtalar = next(j for j in femur.iter("joint") if j.get("name") == "subtalar_angle_r")
-        subtalar.set("range", _fmt(SUBTALAR_RANGE))
+        st_hinge = next(j for j in femur.iter("joint") if j.get("name") == "subtalar_angle_r")
+        st_hinge.set("range", _fmt(SUBTALAR_RANGE))
     if six_dof:
         TC.add_joint(model, femur, mesh_dir)
+        if subtalar == "contact":
+            ST.add_joint(model, femur, mesh_dir)
 
     ET.indent(model, space="  ")
     knee = "free" if knee_angle_deg is None else f"locked at {knee_angle_deg:g} deg"
@@ -311,6 +315,8 @@ def build(src: Path, out_dir: Path, knee_angle_deg: float | None, ligaments: boo
         f"     Knee: {knee}. Ligaments: {'yes' if ligaments else 'no'}."
         f" Talocrural joint: {'6-DOF with contact' if six_dof else '1-DOF hinge'}, {axis} axis"
         + (f" ({swing_deg:g} deg swing)" if axis == "moving" else "") + "."
+        + (f" Subtalar joint: {'6-DOF with contact, anatomical axis' if subtalar == 'contact' else '1-DOF hinge'}."
+           if six_dof else "") +
         " Do not edit by hand; edit the generator and rebuild. -->\n"
     )
     out = out_dir / "ankle_foot_r.xml"
@@ -331,7 +337,8 @@ def main() -> None:
     g.add_argument("--free-knee", action="store_true", help="leave the knee unlocked")
     p.add_argument("--no-ligaments", action="store_true", help="omit the ankle ligaments")
     p.add_argument("--six-dof", action="store_true",
-                   help="EXPERIMENTAL: 6-DOF talocrural joint with articular contact (see talocrural.py)")
+                   help="EXPERIMENTAL: 6-DOF talocrural and subtalar joints with articular contact "
+                        "(see talocrural.py, subtalar.py)")
     p.add_argument("--axis", choices=AX.KINDS, default=None,
                    help="talocrural axis (see ankle_axis.py): 'moving' = Inman axis at neutral whose "
                         "inclination varies with flexion (default); 'inman' = fixed Inman axis (default "
@@ -339,6 +346,9 @@ def main() -> None:
     p.add_argument("--swing-deg", type=float, default=AX.SWING_DEG,
                    help=f"moving axis: total change in coronal inclination across the flexion range "
                         f"(default {AX.SWING_DEG:g}, illustrative - see ankle_axis.py)")
+    p.add_argument("--subtalar", choices=("hinge", "contact"), default="contact",
+                   help="with --six-dof: 'contact' = 6-DOF subtalar joint with articular contact about an "
+                        "anatomical axis (see subtalar.py); 'hinge' = MS-Human-700's 1-DOF hinge")
     args = p.parse_args()
     if args.six_dof and args.no_ligaments:
         p.error("--six-dof needs the ligaments: without them nothing holds the talus in the mortise")
@@ -346,7 +356,8 @@ def main() -> None:
     if args.six_dof and axis == "moving":
         p.error("--six-dof needs a fixed axis (its trochlea is a cylinder about it): use --axis inman or original")
     out = build(args.src, args.out, None if args.free_knee else args.knee_angle,
-                ligaments=not args.no_ligaments, six_dof=args.six_dof, axis=axis, swing_deg=args.swing_deg)
+                ligaments=not args.no_ligaments, six_dof=args.six_dof, axis=axis, swing_deg=args.swing_deg,
+                subtalar=args.subtalar)
     print(f"wrote {out}")
 
 

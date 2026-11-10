@@ -310,8 +310,9 @@ def check_six_dof(xml: Path) -> None:
         rig = Bench(xml)
         calcn = rig.calcn
         # The load is applied as a step to a light, free foot, which swings into the ankle's range stop
-        # within ~40 ms and overshoots it; that impact is reported, not asserted. Seating is asserted
-        # once the foot has settled (after 0.3 s).
+        # within ~40 ms and overshoots it, and (6-DOF subtalar joint) rolls about the subtalar axis for a
+        # few tenths of a second more; that transient is reported, not asserted. Seating is asserted
+        # once the foot has settled (the last 0.5 s).
         worst, impact = 0.0, 0.0
         while rig.d.time < 1.5:
             rig.d.qfrc_applied[:] = 0
@@ -319,7 +320,7 @@ def check_six_dof(xml: Path) -> None:
             mujoco.mj_applyFT(rig.m, rig.d, np.array(F, float), np.zeros(3), p, calcn, rig.d.qfrc_applied)
             mujoco.mj_step(rig.m, rig.d)
             tr = max(abs(v) for v in talus(rig)[:3])
-            if rig.d.time > 0.3:
+            if rig.d.time > 1.0:
                 worst = max(worst, tr)
             else:
                 impact = max(impact, tr)
@@ -329,8 +330,8 @@ def check_six_dof(xml: Path) -> None:
                             "120 N failure load; README limitation 1) and tilts the talus into inversion, and the "
                             "narrow posterior trochlea (Hayes 2006 taper) gives it room")
               if "plantarflexes" in label and worst < 3e-3 else None)
-        print(f"  NOTE  {label}: peak translation {impact * 1e3:.2f} mm in the first 0.3 s "
-              f"(the foot swinging into the range stop)")
+        print(f"  NOTE  {label}: peak translation {impact * 1e3:.2f} mm in the first second "
+              f"(the foot swinging into its range stops)")
     # A pure generalized torque on ankle_angle_r with no joint compression is not
     # a physical load; report what it does rather than assert.
     rig = Bench(xml)
@@ -517,67 +518,101 @@ def check_stormont1985(xml: Path) -> None:
           f"{350 * hw:.1f} N*m at 350 N, {700 * hw:.1f} N*m at 700 N")
 
 
-# Pellegrini et al. (2016) J Bone Joint Surg Am 98:842-848, Table II (n=16, 4 N*m,
-# 36 N axial load, intact): inversion (deg, mean and SD) attributed to the subtalar
-# joint (ankle fixed) and to the ankle (ankle freed), by flexion (+ = DF).
+# Pellegrini et al. (2016) J Bone Joint Surg Am 98:842-848 (n=16, intact, 36 N axial load; full text).
+# Table II, 4 N*m: inversion (deg, mean and SD) attributed to the subtalar joint (ankle pinned) and to
+# the ankle (ankle freed), by flexion (+ = DF).
 PELLEGRINI2016 = {10: ((3.8, 1.4), (6.4, 2.2)), 0: ((7.2, 1.7), (10.4, 3.1)),
                   -10: ((8.0, 2.2), (13.1, 3.6)), -20: ((10.8, 2.6), (14.7, 3.4))}
-
-# Shared core (main): with the cervical ligament slack to 14 deg (Knudson 1997) nothing else stiffens the 1-DOF
-# subtalar hinge in inversion, so it rests near its 19.5 deg stop at 4 N*m. Each branch supplies that stiffness
-# its own way (ligasys-sprain: a fitted spring; research-twin: subtalar contact), where these checks pass.
-SUBTALAR_LAX_REASON = ("on the shared core the subtalar hinge has no inversion stiffness below the CL's 14 deg "
-                       "onset and sits near its 19.5 deg stop at 4 N*m; each branch adds that stiffness "
-                       "(README, 'Branches')")
+# Table II, subtalar joint at neutral flexion, 4 N*m: (rig axis, torque sign, mean, SD).
+PELLEGRINI2016_ROTATIONS = {"eversion": ("roll", -1, 4.6, 3.3), "internal rotation": ("yaw", +1, 5.1, 2.4),
+                            "external rotation": ("yaw", -1, 4.8, 1.1)}
+# Table I, subtalar joint at neutral flexion, 67 N drawer: ((anterior, medial) direction, mean mm, SD).
+PELLEGRINI2016_DRAWER = {"anterior": ((1, 0), 1.3, 0.7), "posterior": ((-1, 0), 0.8, 0.3),
+                         "medial": ((0, 1), 1.5, 0.7), "lateral": ((0, -1), 1.2, 0.4)}
 
 
 def check_pellegrini2016(xml: Path) -> None:
-    """Benchmark: subtalar vs ankle share of hindfoot inversion, and which ligament restrains the subtalar joint.
+    """Benchmark: subtalar and ankle motion in Pellegrini's rig, and which ligament restrains the subtalar joint.
 
-    4 N*m inversion about the anterior-posterior axis with ankle flexion held.
-    Pellegrini measured calcaneal rotation in the coronal plane; the model's
-    subtalar hinge is oblique, so its angle is projected onto the AP axis.
+    The rig (bench.HindfootRig) holds the heel in a cradle that can only turn about the foot's
+    front-to-back axis (4 N*m inversion-eversion) or its vertical axis (4 N*m rotation), on a free
+    translation platform, under a 36 N axial load. The ankle is pinned to isolate the subtalar joint,
+    then freed; the ankle's share is the difference. Nothing in the model is fitted to these numbers.
     """
-    from bench import Bench
-    rig = Bench(xml)
-    mujoco.mj_forward(rig.m, rig.d)
-    ax = abs(rig.d.xaxis[rig.m.joint("subtalar_angle_r").id][0])  # world x = anterior
+    from bench import HindfootRig, SUBTALAR_PLAY
+    probe = mujoco.MjModel.from_xml_path(str(xml))
+    if not all(mujoco.mj_name2id(probe, mujoco.mjtObj.mjOBJ_JOINT, j) >= 0 for j in SUBTALAR_PLAY):
+        print("\n  NOTE  Pellegrini 2016 benchmark skipped: it needs the 6-DOF subtalar joint. In the rig the heel "
+              "turns about the rig's axis, which a 1-DOF subtalar hinge cannot follow at all")
+        return
 
-    def run(ang, cuts=()):
-        rig = Bench(xml)
+    def rotate(ankle, axis="roll", torque=4.0, pinned=True, cuts=()):
+        rig = HindfootRig(xml, ankle)
         rig.cut(*cuts)
-        rig.hold(ang, None)
-        ok = rig.settle(1.5, foot_torque=[4, 0, 0])
-        return np.degrees(rig.q("subtalar_angle_r")) * ax, np.degrees(rig.q("talus_tilt_r")), ok
+        if pinned:
+            rig.pin_ankle()
+        ok = rig.settle(0.5)
+        rig.free(axis)
+        ok &= rig.settle(1.5, **{axis: torque})
+        return rig.angle(axis), ok
 
-    print(f"\n  Pellegrini 2016 benchmark (4 N*m inversion; subtalar = coronal component, x{ax:.2f} of the hinge angle):")
-    print(f"  {'ankle':>6}{'subtalar':>10}{'Pellegrini':>13}{'talar tilt':>12}{'Pellegrini ankle':>18}")
-    share0 = None
+    def drawer(direction, pinned=True):
+        rig = HindfootRig(xml, 0.0)
+        if pinned:
+            rig.pin_ankle()
+        ok = rig.settle(0.5)
+        p0 = rig.platform()
+        ok &= rig.settle(1.5, drawer=tuple(67.0 * np.array(direction, float)))
+        return float(np.linalg.norm(rig.platform() - p0)) * 1000, ok
+
+    within, total = 0, 0
+
+    def tally(value, mean, sd):
+        nonlocal within, total
+        total += 1
+        within += abs(value - mean) <= 2 * sd
+        return f"{value:6.1f}{f'{mean} +/- {sd}':>15}"
+
+    print("\n  Pellegrini 2016 benchmark (heel in the rig's cradle, 36 N axial load; model, then Pellegrini mean +/- SD):")
+    print(f"  4 N*m inversion  {'subtalar (ankle pinned)':>28}{'ankle (freed - pinned)':>26}")
+    sub, ank = {}, {}
     for ang, ((sm, ss), (am, asd)) in PELLEGRINI2016.items():
-        s, t, ok = run(ang)
-        if ang == 0:
-            share0 = t / (s + t)
-        print(f"  {ang:+6d}{s:10.1f}{f'{sm}+/-{ss}':>13}{t:12.1f}{f'{am}+/-{asd}':>18}" + ("" if ok else "  UNSTABLE"))
-    check(0.25 <= share0 <= 0.75, f"both joints carry a substantial share of hindfoot inversion at neutral "
-          f"(ankle {share0 * 100:.0f}%; Pellegrini 59%)", known_reason=SUBTALAR_LAX_REASON)
-    s0, *_ = run(0)
-    s_cfl, *_ = run(0, ("CFL_r",))
-    s_int, *_ = run(0, ("CL_r", "ITCL_r"))
-    s_all, *_ = run(0, ("CFL_r", "CL_r", "ITCL_r"))
+        s, ok1 = rotate(ang)
+        t, ok2 = rotate(ang, pinned=False)
+        sub[ang], ank[ang] = s, t - s
+        print(f"  ankle {ang:+4d} deg  {tally(s, sm, ss):>28}{tally(t - s, am, asd):>26}"
+              + ("" if ok1 and ok2 else "  UNSTABLE"))
+    print("  subtalar joint at neutral, ankle pinned:")
+    for name, (axis, sign, mean, sd) in PELLEGRINI2016_ROTATIONS.items():
+        v, ok = rotate(0, axis, sign * 4.0)
+        print(f"  4 N*m {name:<18}{tally(abs(v), mean, sd)} deg" + ("" if ok else "  UNSTABLE"))
+    for name, (direction, mean, sd) in PELLEGRINI2016_DRAWER.items():
+        v, ok = drawer(direction)
+        print(f"  67 N {name + ' drawer':<19}{tally(v, mean, sd)} mm" + ("" if ok else "  UNSTABLE"))
+    print(f"  {within}/{total} model values within Pellegrini mean +/- 2 SD")
+
     sn, sd = PELLEGRINI2016[0][0]
-    check(abs(s0 - sn) <= 2 * sd, f"intact subtalar inversion at neutral within 2 SD of Pellegrini ({s0:.1f} vs {sn} +/- {sd} deg)",
-          known_reason="the subtalar ligaments are slack to 14 deg (Knudson 1997, unloaded feet); Pellegrini applied a "
-                       "36 N axial load, which seats the talocalcaneal facets. The 1-DOF hinge has no subtalar "
-                       "articular contact, so it cannot stiffen under axial load (README limitation 8)")
-    print(f"  subtalar at neutral: intact {s0:.1f}, CFL cut {s_cfl:.1f}, CL+ITCL cut {s_int:.1f}, all three {s_all:.1f} deg")
-    check(s_all > s0 + 2, f"cutting CFL + CL + ITCL increases subtalar inversion ({s0:.1f} -> {s_all:.1f} deg)",
-          known_reason=SUBTALAR_LAX_REASON)
-    check(s_cfl - s0 > s_int - s0,
+    check(abs(sub[0] - sn) <= 2 * sd,
+          f"intact subtalar inversion at neutral within 2 SD of Pellegrini ({sub[0]:.1f} vs {sn} +/- {sd} deg)")
+    share0 = ank[0] / (sub[0] + ank[0])
+    check(0.25 <= share0 <= 0.75, f"both joints carry a substantial share of hindfoot inversion at neutral "
+          f"(ankle {share0 * 100:.0f}%; Pellegrini 59%)")
+    check(sub[-20] > sub[10] + 1.0, f"subtalar inversion is larger in plantarflexion than in dorsiflexion "
+          f"({sub[10]:.1f} deg at 10 DF -> {sub[-20]:.1f} deg at 20 PF; Pellegrini 3.8 -> 10.8)",
+          known_reason="with the ankle pinned, only the CFL can make the subtalar joint depend on ankle flexion, and "
+                       "the model's CFL does not tighten in dorsiflexion as Colville 1990 found (see the Colville "
+                       "benchmark), so it does not stiffen the joint there")
+
+    s_cfl, _ = rotate(0, cuts=("CFL_r",))
+    s_int, _ = rotate(0, cuts=("CL_r", "ITCL_r"))
+    s_all, _ = rotate(0, cuts=("CFL_r", "CL_r", "ITCL_r"))
+    print(f"  sectioning at neutral: intact {sub[0]:.1f}, CFL cut {s_cfl:.1f}, CL+ITCL cut {s_int:.1f}, "
+          f"all three {s_all:.1f} deg (Pellegrini: CFL + CL +5.7; all three +10.1 at 10 DF)")
+    check(s_all > sub[0] + 2, f"cutting CFL + CL + ITCL increases subtalar inversion ({sub[0]:.1f} -> {s_all:.1f} deg)")
+    check(s_cfl - sub[0] > s_int - sub[0],
           f"the CFL, not the cervical/interosseous ligaments, is the main subtalar restraint "
-          f"(CFL cut {s_cfl - s0:+.1f} deg vs CL+ITCL cut {s_int - s0:+.1f} deg; Pellegrini: CFL +5.7-6.2, CL+ITCL n.s.)",
-          known_reason="in MS-Human-700's 1-DOF oblique subtalar hinge the CFL lies 18 deg from the axis (5 mm moment "
-                       "arm), so it cannot resist hinge rotation; in cadavers it restrains calcaneal motion the hinge "
-                       "does not allow. Needs a subtalar joint with more freedom (README limitation 8)")
+          f"(CFL cut {s_cfl - sub[0]:+.1f} deg vs CL+ITCL cut {s_int - sub[0]:+.1f} deg; "
+          f"Pellegrini: CFL significant, CL+ITCL n.s.)")
 
 
 def sprain_sequence(xml: Path, ankle_deg: float, direction, max_torque: float = 40.0, max_events: int = 3):
@@ -719,16 +754,20 @@ def main() -> int:
     ja_id = am.joint("ankle_angle_r").id
     same_axis = (np.allclose(am.jnt_axis[ja_id], fm.jnt_axis[fm.joint("ankle_angle_r").id], atol=1e-5)
                  and np.allclose(am.jnt_pos[ja_id], fm.jnt_pos[fm.joint("ankle_angle_r").id], atol=1e-6))
+    js_id, fs_id = am.joint("subtalar_angle_r").id, fm.joint("subtalar_angle_r").id
+    same_subtalar = (np.allclose(am.jnt_axis[js_id], fm.jnt_axis[fs_id], atol=1e-5)
+                     and np.allclose(am.jnt_pos[js_id], fm.jnt_pos[fs_id], atol=1e-6))
     global AXIS_KIND
     moving = any(am.joint(i).name == "ankle_axis_tilt_r" for i in range(am.njnt))
     AXIS_KIND = "moving" if moving else ("original" if same_axis else "inman")
     print(f"ankle axis: {AXIS_KIND}\n")
     print("1. Muscle-tendon lengths vs full model"
-          + ("" if same_axis else " (ankle axis re-registered: compared with the ankle at neutral only)"))
+          + ("" if same_axis else " (ankle axis re-registered: compared with the ankle at neutral only)")
+          + ("" if same_subtalar else " (subtalar axis re-registered, see subtalar.py: subtalar at neutral only)"))
     grid = itertools.product(
         np.linspace(0.0, 1.5, 4),      # knee flexion
         np.linspace(-0.68, 0.52, 7) if same_axis else [0.0],   # ankle (talocrural); + = dorsiflexion
-        np.linspace(-0.34, 0.34, 5),   # subtalar
+        np.linspace(-0.34, 0.34, 5) if same_subtalar else [0.0],   # subtalar
         np.linspace(-0.5, 0.5, 3),     # MTP
     )
     max_err = 0.0
