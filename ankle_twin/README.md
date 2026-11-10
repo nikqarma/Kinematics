@@ -57,7 +57,7 @@ All ligament data lives in [ligaments.py](ligaments.py), each value tagged with 
 
 **Two-band ATFL.** Vega 2020 found two ATFL bands in all 30 fresh-frozen specimens:
 - **Superior band:** lengthens from 12.6 mm in DF to 19.2 mm in PF. The model's ATFL already behaved this way, so it keeps Ozeki's 16° PF onset.
-- **Inferior band:** isometric at 10.6 mm. It shares its fibular origin with the CFL, to which it is joined by arciform fibres. In the model it runs from the CFL's fibular site to the lateral talar vertex below the superior insertion whose length is closest to 10.6 mm, and it is taut from neutral.
+- **Inferior band:** isometric at 10.6 mm. It shares its fibular origin with the CFL, to which it is joined by arciform fibres. In the model it runs from the anterior fibular border, 18.7 mm from the malleolar tip (the CFL's site before its correction; see "Attachment geometry" for why the ATFL origins have not moved), to the lateral talar vertex below the superior insertion whose length is closest to 10.6 mm, and it is taut from neutral.
 
 Without it, the ATFL was slack at neutral and cutting it changed nothing, where Rasmussen 1982 measured internal rotation rising from 7° to 18°. Rochelle 2020 tested the whole ATFL, and Vega's Table 1 (band widths) was not available, so stiffness and failure load are split equally between the bands. The arciform coupling to the CFL is not modelled.
 
@@ -80,7 +80,12 @@ Without it, the ATFL was slack at neutral and cutting it changed nothing, where 
 The original tables still need checking. The tibiospring stiffness is the one remaining assumption. Siegler 1988 reports the tibiospring among the strongest bands, so 39.1 N/mm is probably low.
 
 **Attachments.**
-- **Lateral ligaments:** found on the bone meshes by landmark rules (e.g. "anterior fibular border, 13.8 mm proximal to the malleolar tip", Clanton 2015 via secondary summary). The coarse talus mesh does not resolve the lateral tubercle, so the PTFL insertion is the posterior-process vertex whose neutral length matches Ozeki 2002 (23.7 mm; the old rule gave 14.6 mm). Neutral lengths vs Ozeki: CFL −1%, PTFL 0%, ATFL **−29%** (14.1 vs 19.8 mm; de Asla 2009 measured 16.3 mm in vivo).
+- **Lateral ligaments:** found on the bone meshes by landmark rules, anchored to published distances where the mesh allows (Clanton 2015 via secondary summary).
+  - **CFL:** the fibular origin is the point on the antero-inferior outline of the lateral malleolus 5.3 mm from its tip (Clanton 2015). The calcaneal insertion is the lateral-wall vertex nearest the point one in-situ length (29.9 mm, Ozeki 2002) from the origin, 40° behind the fibular long axis (Edama 2017: the modal 40–49° class of 80 feet; mean of the class midpoints 40.6°). The result is 31.2 mm long at 42°. It tightens in dorsiflexion (5.4 mm/rad on the Inman axes, 2.2 mm/rad on `original`), as Colville 1990, Ozeki 2002 and Sarrafian describe. The rate is about twice Colville's midsubstance gauge (about 6% strain from 20° PF to 20° DF against the model's 11%). With Ozeki's zero strain at 17.8° DF the CFL is 1.6 mm slack at neutral.
+  - **Earlier CFL path:** until November 2026 the origin rule took the most anterior fibular vertex in a height band, which put it 18.7 mm from the tip. The ankle axis then passed through the middle of the ligament, so it was near-isometric over flexion.
+  - **ATFL origins still use that band rule** and sit 22.5 mm (superior band) and 18.7 mm (inferior band) from the tip, against Clanton's 13.8 mm and a shared origin with the CFL (Vega 2020). Moving them tilts the ATFL 51° upwards with this mesh's talar insertion, so the talar footprint or the mesh's malleolar tip is also off. Open.
+  - **Sensitivity:** whether the CFL tightens in dorsiflexion depends on where the ankle axis exits relative to its origin, within Inman's own spread (8 ± 5 mm anterior of the tip). Edama 2017, simulating an axis through the malleolar tips, found 20–39° ligaments tighten in dorsiflexion and 40–59° ones slacken.
+  - **PTFL:** the coarse talus mesh does not resolve the lateral tubercle, so the insertion is the posterior-process vertex whose neutral length matches Ozeki 2002 (23.7 mm; the old rule gave 14.6 mm). Neutral lengths vs Ozeki: CFL +4%, PTFL 0%, ATFL **−29%** (14.1 vs 19.8 mm; de Asla 2009 measured 16.3 mm in vivo).
 - **Deltoid:** placed from Campbell et al. 2014, Table I, read in full. Origins are the published offsets from the distal centre of the intercollicular groove. Insertions follow the published length and orientation, so TSL, TCL, dATTL and dPTTL reproduce Campbell's lengths exactly at neutral.
 - **Tibionavicular exception:** its orientation row in Campbell's table is internally inconsistent (the direction components don't form a unit vector), so its insertion uses the navicular landmark instead. Its length is 31.5 mm vs the published 33.6 mm.
 - **Mesh mismatch:** deltoid attachment points sit 4–9 mm from the nearest mesh vertex, a mismatch between published anatomy and the coarse MS-Human-700 meshes.
@@ -124,12 +129,12 @@ To view the model, drag `model/ankle_foot_r.xml` into MuJoCo's `simulate` viewer
 | Moving axis (default build) | instantaneous axis inclination 11.3° → 18.1° → 22.7° from 35° PF through neutral to 25° DF; equals the Inman axis at neutral |
 | Ligament springs are tension-only | matches k·max(0, L−L0) to 4e-15 N·m |
 | Exponential spring stacks | follow the published Funk curves within 5–14% over 0.5–10% strain |
-| Ligament lengths at neutral | TSL, TCL, dATTL, dPTTL equal Campbell 2014; TNL −6%; CFL and PTFL match Ozeki 2002; ATFL −29% |
+| Ligament lengths at neutral | TSL, TCL, dATTL, dPTTL equal Campbell 2014; TNL −6%; PTFL matches Ozeki 2002, CFL +4%; ATFL −29% |
 | Ligament length trends | ATFL, TNL, TSL, dATTL lengthen in plantarflexion; PTFL in dorsiflexion; CFL and CL in inversion; TNL, TSL, TCL in eversion (ITCL not asserted; see "Subtalar ligaments") |
 | Passive behaviour | the hanging foot rests at about 14° PF instead of on the −39° stop; ligaments resist both end ranges (2.7 N·m at 25° PF, 0.9 N·m at 25° DF) |
 | Bahr 1997 benchmark (6-DOF builds) | ATFL and CFL force increases under the talar tilt (5.7 N·m) and drawer (80 N) tests at 10° DF – 20° PF; flexion trends asserted, magnitudes reported (see the 6-DOF section) |
 | ATFL bands | superior band lengthens 4.8–5.8 mm from 20° DF to 30° PF; inferior band changes ≤ 1.2 mm (Vega 2020: 6.6 mm and isometric) |
-| Rasmussen 1982 benchmark (6-DOF builds) | talar tilt and internal rotation at 1.5 N·m after serial ATFL/CFL/PTFL cuts. Intact tilt in range; tilt grows with each cut; cutting the ATFL raises internal rotation 9.4° → 20.7° (Rasmussen 7° → 18°) |
+| Rasmussen 1982 benchmark (6-DOF builds) | talar tilt and internal rotation at 1.5 N·m after serial ATFL/CFL/PTFL cuts. Intact tilt in range; tilt grows with each cut; cutting the ATFL raises internal rotation 10.3° → 24.0° (Rasmussen 7° → 18°). Intact tilt on `inman` is 11.0°, 1° over Rasmussen's range (**KNOWN**) |
 | Pellegrini 2016 benchmark (6-DOF builds) | subtalar vs ankle share of inversion at 4 N·m, and CFL vs CL + ITCL sectioning. On `main` the subtalar magnitude, sectioning and (`original` axis) share checks are KNOWN: no subtalar inversion stiffness below the CL's 14° onset (see "Branches") |
 | Sprain order (6-DOF builds) | quasi-static supination ramped 1 N·m at a time at 30, 20 and 10° PF, subtalar free; each ligament is cut at its reported failure load. An ATFL band must fail first |
 | Stormont 1985 loaded stability (6-DOF builds) | 700 N axial load, 3 N·m inversion, lateral ligaments cut: the talus must stay seated. Passes on both axes with the anatomical mortise (0.1° tilt) |
@@ -157,7 +162,7 @@ To view the model, drag `model/ankle_foot_r.xml` into MuJoCo's `simulate` viewer
 | Ligaments over failure load within 25° PF – 20° DF | TNL at 25° PF (231 N vs 120 N) | none | none |
 | Strain at 35° PF: ATFL / TNL / dATTL / dPTTL / TCL | 22 / 27 / 82 / 41 / 19% | 26 / 12 / 30 / 4 / 0% | 24 / 13 / 35 / 7 / 0% |
 | PTFL strain at 25° DF | 2% | 4% | 5% |
-| Ligaments that should tighten in DF but don't | CFL, TCL, dPTTL | TCL, dPTTL (near-isometric, < 1 mm/rad) | same as `inman` |
+| Ligaments that should tighten in DF but don't | TCL, dPTTL | TCL, dPTTL (near-isometric, < 1 mm/rad) | same as `inman` |
 | Passive ligament moment at 25° PF | 12.8 N·m | 2.5 N·m | 2.7 N·m |
 
 **Reading it.**
@@ -186,53 +191,54 @@ To view the model, drag `model/ankle_foot_r.xml` into MuJoCo's `simulate` viewer
 At zero offsets the joint is congruent, so it reproduces the hinge. Contact is frictionless, and all plates now use the default stiff cartilage contact (700 N: 0.04 mm penetration). The tuned compliant malleolar plates of the earlier idealised mortise are no longer needed.
 
 **What it does well** (asserted in the verification; `inman` is the default with `--six-dof`):
-- **Seating:** the talus stays seated under 700 N axial load (0.3 mm) and, once settled, under forefoot pushes and pulls. During the first 0.3 s a free foot swings into its range stop and the talus moves up to 2.5 mm; that impact is reported, not asserted. At the −39° plantarflexion stop on `inman` it settles 2.3 mm off centre (**KNOWN**): the overstretched deltoid (limitation 1) tilts it into inversion and the narrow back of the trochlea gives it room. Unloaded under gravity it moves 0.4 mm (`original`: 0.5 mm, **KNOWN**).
+- **Seating:** the talus stays seated under 700 N axial load (0.3 mm) and, once settled, under forefoot pushes and pulls. During the first 0.3 s a free foot swings into its range stop and the talus moves up to 2.5 mm; that impact is reported, not asserted. At the −39° plantarflexion stop on `inman` it settles 2.9 mm off centre (**KNOWN**): the overstretched deltoid (limitation 1) tilts it into inversion and the narrow back of the trochlea gives it room. Unloaded under gravity it moves 1.6 mm (`original`: 1.1 mm), both **KNOWN**: the lateral ligaments are slack in the hanging foot, so the deep anterior deltoid tilts the talus 7° into inversion until the ATFL catches. The model has no capsule or muscle tone to hold it.
 - **Loaded stability (Stormont 1985):** with 700 N or 350 N axial load and the lateral ligaments cut, 3 N·m inversion tilts the talus 0.1°. With the idealised mortise it slid 16 mm medially and tipped to 45°.
 - **Sectioning** moves in the right direction:
 
   | Test | `--axis original` | `inman` (default) |
   |---|---|---|
-  | Anterior drawer of the lateral talus at 150 N, intact → ATFL (both bands) cut | 8.1 → 14.4 mm | 10.2 → 15.2 mm |
-  | Talar tilt under 3 N·m inversion, intact → ATFL cut → ATFL+CFL cut | 9.0° → 13.9° → 35.4° | 11.5° → 14.4° → 37.9° |
+  | Anterior drawer of the lateral talus at 150 N, intact → ATFL (both bands) cut | 8.5 → 16.4 mm | 11.0 → 16.9 mm |
+  | Talar tilt under 3 N·m inversion, intact → ATFL cut → ATFL+CFL cut | 9.8° → 16.4° → 35.4° | 13.3° → 17.9° → 37.9° |
   | Anterior drawer with 700 N axial compression | 1.6 mm | 1.7 mm |
 
 **Rasmussen 1982 benchmark.** 1.5 N·m applied to the foot, ankle and subtalar held at neutral. Rasmussen loaded the talus directly with the subtalar joint nailed (n = 6 per plane, mean):
 
 | | Talar tilt, `inman` | Talar tilt, `original` | Talar tilt, Rasmussen | Internal rotation, `inman` | Internal rotation, `original` | Internal rotation, Rasmussen |
 |---|---|---|---|---|---|---|
-| Intact | 8.6° | 6.2° | 6° (2–10°) | 9.9° | 9.0° | 7° |
-| ATFL cut | 11.5° | 11.3° | 11° | 22.0° | 24.4° | 18° |
+| Intact | 11.0° | 8.0° | 6° (2–10°) | 10.3° | 9.7° | 7° |
+| ATFL cut | 15.7° | 14.3° | 11° | 24.0° | 27.3° | 18° |
 | + CFL cut | 30.1° | 25.1° | 19° | 23.7° | 28.0° | 21° |
 | + PTFL cut | 40.2° | 40.1° | 46° | 23.9° | 28.0° | 26° |
 
-- **Matches:** intact tilt, the ATFL-cut step in tilt (now 11°, where the idealised mortise gave 10° on 9° intact), and the ATFL as the main internal-rotation restraint.
-- **Over-reads:** tilt after the CFL cut (25–30° vs 19°), and internal rotation by 2–7°.
+- **Matches:** the size of the ATFL-cut step in tilt (+5–6°, Rasmussen +5°), and the ATFL as the main internal-rotation restraint.
+- **Over-reads:** intact tilt on `inman` (11.0°, 1° above Rasmussen's 2–10° range, **KNOWN**; 8.6° before the CFL correction), tilt after the CFL cut (25–30° vs 19°), and internal rotation by 3–9°.
+- **Why intact tilt rose:** the corrected CFL is 1.6 mm slack at neutral, so the talus tilts about 2° further before it engages. Nothing else in the model (no capsule) takes up that slack.
 
 **Bahr 1997 benchmark.** Increase in ligament force (N) with the talocrural flexion held at each angle, `inman` axis. Bahr values are mean ± SD (n = 8):
 
 | Test | Ankle | ATFL model | ATFL Bahr | CFL model | CFL Bahr |
 |---|---|---|---|---|---|
-| Talar tilt, 5.7 N·m supination | 10° DF | 26 | 26 ± 11 | 197 | 123 ± 54 |
-| | 0° | 56 | 36 ± 17 | 201 | 81 ± 45 |
-| | 10° PF | 79 | 64 ± 51 | 198 | 60 ± 31 |
-| | 20° PF | 70 | 123 ± 107 | 165 | 32 ± 34 |
-| Anterior drawer, 80 N | 10° DF | 72 | 33 ± 17 | 62 | 40 ± 17 |
-| | 0° | 83 | 23 ± 14 | 43 | 15 ± 14 |
-| | 10° PF | 76 | 34 ± 17 | 26 | 6 ± 8 |
-| | 20° PF | 50 | 53 ± 68 | −2 | −3 ± 6 |
+| Talar tilt, 5.7 N·m supination | 10° DF | 32 | 26 ± 11 | 149 | 123 ± 54 |
+| | 0° | 79 | 36 ± 17 | 146 | 81 ± 45 |
+| | 10° PF | 98 | 64 ± 51 | 141 | 60 ± 31 |
+| | 20° PF | 123 | 123 ± 107 | 125 | 32 ± 34 |
+| Anterior drawer, 80 N | 10° DF | 72 | 33 ± 17 | 40 | 40 ± 17 |
+| | 0° | 85 | 23 ± 14 | 17 | 15 ± 14 |
+| | 10° PF | 85 | 34 ± 17 | 0 | 6 ± 8 |
+| | 20° PF | 73 | 53 ± 68 | −2 | −3 ± 6 |
 
-The model ATFL is both bands summed, as Bahr's transducer measured the whole ligament. 9 of 16 values fall within Bahr's mean ± 2 SD (11 of 16 on `--axis original`). Both flexion trends are right. What's wrong:
-- **The CFL is overloaded under inversion, about 2–5× Bahr.** Bahr's buckle transducers may under-read, so the excess may be partly in the reference. Not resolved.
-- **Drawer loads the ATFL 2–3× too much at neutral and in DF.** Bahr let the tibia rotate and the foot plate translate; here the tibia is fixed.
+The model ATFL is both bands summed, as Bahr's transducer measured the whole ligament. 10 of 16 values fall within Bahr's mean ± 2 SD (9 of 16 on `--axis original`; before the CFL correction 9 and 11). Both flexion trends are right, and the CFL's drawer forces now match at all four angles. What's wrong:
+- **The CFL is still overloaded under inversion, 1.2–4× Bahr** (it was 1.6–5×), most in plantarflexion. Bahr's buckle transducers may under-read, so the excess may be partly in the reference. Not resolved.
+- **Drawer loads the ATFL 2–4× too much at neutral and in DF.** Bahr let the tibia rotate and the foot plate translate; here the tibia is fixed.
 
 **Pellegrini 2016 benchmark.** 4 N·m inversion, ankle flexion held, subtalar free. The model's oblique subtalar hinge angle is projected onto the coronal plane (×0.79) to compare with Pellegrini's calcaneal rotation (n = 16, mean ± SD). On `main` the subtalar joint has no inversion stiffness below the CL's 14° onset (see "Branches"), so it sits near its stop and three checks are KNOWN:
 
 | Ankle | Subtalar, `inman` | Subtalar, Pellegrini | Ankle (talar tilt), `inman` | Ankle, Pellegrini |
 |---|---|---|---|---|
-| 10° DF | 13.1° | 3.8 ± 1.4° | 7.6° | 6.4 ± 2.2° |
-| 0° | 13.9° | 7.2 ± 1.7° | 5.9° | 10.4 ± 3.1° |
-| 10° PF | 14.6° | 8.0 ± 2.2° | 3.8° | 13.1 ± 3.6° |
-| 20° PF | 15.2° | 10.8 ± 2.6° | 2.2° | 14.7 ± 3.4° |
+| 10° DF | 14.4° | 3.8 ± 1.4° | 9.3° | 6.4 ± 2.2° |
+| 0° | 15.3° | 7.2 ± 1.7° | 9.9° | 10.4 ± 3.1° |
+| 10° PF | 15.4° | 8.0 ± 2.2° | 10.6° | 13.1 ± 3.6° |
+| 20° PF | 15.4° | 10.8 ± 2.6° | 10.8° | 14.7 ± 3.4° |
 
 **Colville 1990 benchmark.** Strain gauges, subtalar joint screwed, 3 N·m moments; full text read. Model ATFL here is the superior band. On both axes the model reproduces:
 - ATFL lengthening from 20° DF to 30° PF (+25% on `inman`; Colville +15%);
@@ -240,13 +246,13 @@ The model ATFL is both bands summed, as Bahr's transducer measured the whole lig
 - CFL lengthening with inversion at every angle.
 
 The `original` axis's earlier failures at 20° DF (the talus sat 3–8 mm anterior with no load) are gone with the anatomical mortise. It misses:
-- **CFL in flexion:** near-isometric (limitation 2), where Colville found it lengthens toward DF.
+- **CFL in flexion:** on the hinge path the CFL now lengthens toward DF as Colville found, but in this test the talus is free and the deltoid tilts it into inversion in plantarflexion, which lengthens the CFL again (**KNOWN**). Colville also saw a slight rise at 30° PF.
 - **PTFL with inversion:** lengthens; Colville found a slight decrease.
 
 **Why it is not the default:**
 1. **It does not fix the end-range strain problem.** Flexion still happens about the same fixed axis. On the `inman` axis ATFL strain at 35° plantarflexion is about 25% (hinge 26%).
 2. **Some of the mortise is assumed.** The pivot sphere's radius and height and the fibula's stiffnesses are assumptions; the taper is measured.
-3. **The magnitudes are only partly validated.** Ligament forces are benchmarked against Bahr 1997 (above), with mixed agreement. Talar displacements have not been compared with cadaver data; the intact drawer (10 mm at 150 N) may be large for a healthy ankle.
+3. **The magnitudes are only partly validated.** Ligament forces are benchmarked against Bahr 1997 (above), with mixed agreement. Talar displacements have not been compared with cadaver data; the intact drawer (11 mm at 150 N) may be large for a healthy ankle.
 4. **It is not robust to non-physical loads.** A pure generalized torque on `ankle_angle_r` with no joint compression subluxes the talus. Apply loads as forces (muscles, sole or heel forces), which also compress the joint.
 5. **The extra DOFs carry assumed damping.** 200 N·s/m and 1 N·m·s/rad suppress an overshoot instability; this is not taken from literature.
 
@@ -274,7 +280,7 @@ Each feature alone fell short: the pivot at mid-height locked the joint; pivot a
    - **Midsubstance strain gauges (Ozeki 2002; Renström 1988):** only 1.6 mm (ATFL) and 1.2 mm (PTFL) over the whole range.
 
    A single straight line through the footprint centres reproduces the first and so overstates fibre strain. Recruiting fibres in sequence would reconcile them. The ATFL is now two bands (Vega 2020). The superior band still carries the centroid strain, about 24% at 35° PF. Per-band stiffness, from Vega's Table 1 or Dalmau-Pastor 2023, would refine this further. **Use ligament length/strain *trends* and onsets; treat force magnitudes near end range with caution.**
-2. **Structures that should tighten in dorsiflexion:** with the Inman-based axes, TCL (Takao 2020) and dPTTL (anatomy) are near-isometric (< 1 mm/rad) rather than tightening. With `--axis original`, the CFL also slackens. The verification prints this as a NOTE.
+2. **Structures that should tighten in dorsiflexion:** with the Inman-based axes, TCL (Takao 2020) and dPTTL (anatomy) are near-isometric (< 1 mm/rad) rather than tightening. The verification prints this as a NOTE. (The CFL was on this list until its attachments were corrected.)
 3. **Axis choice drives most of 1 and 2.** On the original axis (13.8 mm posterior of the medial malleolar tip), the short medial bands lie *anterior* of the axis and are stretched hard in plantarflexion.
    - **The Inman-based axes fix the medial side**, at the cost of different muscle moment arms: peroneus brevis flips sign, a KNOWN discrepancy.
    - **The moving axis adds only the coronal tilt Lundberg describes.** It doesn't resolve the ATFL/PTFL end-range strain. That likely needs a richer axis motion (translation, transverse rotation) or subject-specific geometry. The experimental 6-DOF joint does not help with this.
@@ -288,11 +294,11 @@ Each feature alone fell short: the pivot at mid-height locked the joint; pivot a
 7. Right side only, generic adult anatomy, low-poly meshes (landmark error of a few mm).
 8. **Inversion is not yet biofidelic.**
    - **Subtalar joint:** still MS-Human-700's 1-DOF hinge (axis through the talar body, about 11 mm above the tarsal canal). On `main` nothing but the CFL resists inversion below the CL's 14° onset; each branch adds the missing stiffness (see "Branches").
-   - **Talar tilt (6-DOF build) is about right.** Intact tilt is 8.6° at 1.5 N·m (Rasmussen 1982: 2–10°). An earlier "too lax" conclusion rested on Choisne 2013 and is withdrawn.
-   - **Internal rotation follows Rasmussen 1982** (9.9° intact, 22.0° with the ATFL cut, against 7° and 18°) with the anatomical mortise: a pivot about the medial malleolus, a trochlea wider in front and a mobile fibula. The pivot geometry and the fibula's stiffnesses are assumptions; segmented articular surfaces would replace them.
+   - **Talar tilt (6-DOF build) is slightly lax.** Intact tilt is 11.0° at 1.5 N·m on `inman` (Rasmussen 1982: 2–10°; `original` 8.0°), because the CFL is slack at neutral and the model has no capsule. An earlier "too lax" conclusion rested on Choisne 2013 and is withdrawn.
+   - **Internal rotation follows Rasmussen 1982** (10.3° intact, 24.0° with the ATFL cut, against 7° and 18°) with the anatomical mortise: a pivot about the medial malleolus, a trochlea wider in front and a mobile fibula. The pivot geometry and the fibula's stiffnesses are assumptions; segmented articular surfaces would replace them.
    - **Loaded stability (Stormont 1985) holds:** under body-weight axial load the talus stays seated in inversion even with the lateral ligaments cut.
-   - **The CFL is still 2–5× Bahr 1997 in talar-tilt tests,** and tilt after the CFL is cut over-reads Rasmussen (30.1° vs 19°).
-   - **The subtalar joint is the wrong kind of joint for the CFL.** In a 1-DOF oblique hinge, the near-parallel CFL has a 5 mm moment arm, so the cervical ligament does the CFL's job (Pellegrini). A subtalar joint with calcaneal rotation about the AP axis and translation, as in the 6-DOF talocrural joint, is the structural fix.
+   - **The CFL is still 1.2–4× Bahr 1997 in talar-tilt tests,** and tilt after the CFL is cut over-reads Rasmussen (30.1° vs 19°).
+   - **The subtalar joint is the wrong kind of joint for the CFL.** In a 1-DOF oblique hinge, the near-parallel CFL has a 3 mm moment arm, so the cervical ligament does the CFL's job (Pellegrini). A subtalar joint with calcaneal rotation about the AP axis and translation, as in the 6-DOF talocrural joint, is the structural fix.
    - **Inferior ATFL band assumptions:** stiffness and failure load are split equally with the superior band, and it has zero strain at neutral. It stretches 1.5–2.5 mm at the extremes of flexion on the moving axis.
    - **Injury-event inversion:** the hindfoot cannot reach it (mean peak about 67° foot-to-shank, Lysdal 2022). The model has no midfoot joint to carry the rest.
 
@@ -323,6 +329,7 @@ The experimental 6-DOF joint (above) addresses limitation 4. It does **not** fix
 - Funk J.R. et al. (2000) *J Biomech Eng* 122:15–22: exponential force–strain fits for TCL, anterior and posterior tibiotalar (via Table 1 of Xu C. et al. 2019, *J Orthop Surg Res* 14:114).
 - Siegler S., Block J., Schneck C.D. (1988) *Foot Ankle* 8:234–242: tibionavicular stiffness 39.1 N/mm, failure 120 N (via Shin et al. 2012 and Xu et al. 2019).
 - Clanton T.O. et al. (2015) *J Bone Joint Surg Am*: lateral ligament footprint distances (via secondary summary).
+- Edama M. et al. (2017) *J Foot Ankle Res* 10:60: angle of the CFL to the fibular long axis in 81 feet, and its simulated strain over flexion and inversion by angle class (open access, full text).
 - Inman V.T. (1976) *The Joints of the Ankle*: empirical axis 5 mm distal to the medial malleolar tip; 3 mm distal and 8 mm anterior to the lateral tip (via a functional-anatomy text).
 - Lundberg A. et al. (1989) *J Bone Joint Surg Br* 71(1):94–99: axes lie close to the midpoint of the line between the malleolar tips, change through the range of motion, are oblique downward and laterally in dorsiflexion, and differ between individuals (abstract).
 - Wolf P. et al. (2022) *Sci Rep* 12:13957: bone-pin walking data; the dorsiflexion/plantarflexion inclination difference runs opposite to Lundberg in 4 of 5 participants; source of the illustrative 14.4° swing (Fig. 5, morphology-based axes for one participant).
