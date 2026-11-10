@@ -192,7 +192,7 @@
               <site name="tibant_r-P4" pos="0.1166 0.0178 -0.0305" />
               <site name="tibpost_r-P3" pos="0.0417 0.0334 -0.0286" />
               <site name="tibpost_r-P4" pos="0.0772 0.0159 -0.0281" />
-              <site name="CFL_r-P2" class="ligament" pos="0.036714 0.021125 0.019003" />
+              <site name="CFL_r-P2" class="ligament" pos="0.021741 0.014054 0.010903" />
               <site name="TNL_r-P2" class="ligament" pos="0.085433 0.034545 -0.039235" />
               <site name="TSL_r-P2" class="ligament" pos="0.0731602 0.0372006 -0.0241124" />
               <site name="TCL_r-P2" class="ligament" pos="0.0606225 0.0273378 -0.0202203" />
@@ -218,7 +218,7 @@
           </body>
           <body name="fibula_distal_r" pos="-0.0084548 -0.406465 0.0106727">
             <site name="PTFL_r-P1" class="ligament" pos="-0.0129902 0.00658841 0.00755231" />
-            <site name="CFL_r-P1" class="ligament" pos="0.0034698 0.00860641 0.00828531" />
+            <site name="CFL_r-P1" class="ligament" pos="-0.0077901 0.00155841 0.0118112" />
             <site name="ATFLi_r-P1" class="ligament" pos="0.0034698 0.00860641 0.00828531" />
             <site name="ATFL_r-P1" class="ligament" pos="0.0020738 0.0160124 0.0151213" />
             <inertial pos="0 0 0" mass="0.25" diaginertia="2e-4 2e-4 2e-4" />
@@ -334,7 +334,7 @@
       <site site="ATFLi_r-P1" />
       <site site="ATFLi_r-P2" />
     </spatial>
-    <spatial name="CFL_r" class="ligament" stiffness="45800" springlength="0 0.0296491">
+    <spatial name="CFL_r" class="ligament" stiffness="45800" springlength="0 0.0327888">
       <site site="CFL_r-P1" />
       <site site="CFL_r-P2" />
     </spatial>
@@ -430,7 +430,7 @@
       <site site="ITCL_r-P1" />
       <site site="ITCL_r-P2" />
     </spatial>
-    <fixed name="subtalar_inversion_stiffness" stiffness="11" springlength="-10 0">
+    <fixed name="subtalar_inversion_stiffness" stiffness="15" springlength="-10 0">
       <joint joint="subtalar_angle_r" coef="1" />
     </fixed>
   </tendon>

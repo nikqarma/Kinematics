@@ -78,12 +78,13 @@ SUBTALAR_RANGE = (-0.34, 0.34)
 # Pellegrini 2016's axially loaded feet. The stiffness is the single parameter
 # fitted to Pellegrini 2016 Table II (subtalar and ankle inversion at 4 N*m, four
 # flexion angles, both 6-DOF builds: 16 values, minimum sum of squared z-scores
-# at 11 N*m/rad over a 6-20 grid, re-fitted on the anatomical mortise; it was
-# 12 on the idealised one, and 10-12 lie within 1.2 of the minimum; onsets of
+# at 15 N*m/rad over a 6-20 grid, re-fitted after the CFL attachment correction
+# (14-16 lie within 0.7 of the minimum); it was 11 before that correction,
+# 12 on the idealised mortise; onsets of
 # 0 and 1.5 deg fit equally, so the onset is left at neutral). Pellegrini is
 # therefore calibration on this branch, not validation. It does not depend on
 # axial load, unlike the real joint.
-SUBTALAR_INVERSION_STIFFNESS = 11.0  # N*m/rad
+SUBTALAR_INVERSION_STIFFNESS = 15.0  # N*m/rad
 
 
 def add_subtalar_endrange(model: ET.Element) -> None:

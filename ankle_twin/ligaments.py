@@ -67,6 +67,9 @@ REFS = {
     "Choisne2013": "Choisne J., Hoch M., Bawab S., Ringleb S.I. (2013) Effect of a semi-rigid ankle stabilizer "
                    "on a simulated isolated subtalar joint instability. ISB 2013 congress abstract, Table 1 "
                    "(n=9, end-range manual inversion, intact / CFL cut / CFL+cervical+ITCL cut)",
+    "Edama2017": "Edama M. et al. (2017) The effects on calcaneofibular ligament function of differences in the "
+                 "angle of the calcaneofibular ligament with respect to the long axis of the fibula: a simulation "
+                 "study. J Foot Ankle Res 10:60 (81 feet, goniometer at neutral; open access, full text)",
     "Colville1990": "Colville M.R. et al. (1990) Strain measurement in lateral ankle ligaments. Am J Sports "
                     "Med 18(2):196-200 (n=10, subtalar fixed with screws, 3 N*m moments; full text)",
     "Vega2020": "Vega J., Malagelada F., Manzanares Cespedes M.C., Dalmau-Pastor M. (2020) The lateral "
@@ -116,6 +119,12 @@ class Ligament:
 
 TNL_K = 39.1e3  # N/m, Siegler1988 (secondary)
 
+# Angle of the CFL behind the fibular long axis, lateral view, ankle neutral.
+# Edama2017 sorted 80 single-band CFLs into 10 deg classes: 20-29 deg 14 feet,
+# 30-39 deg 22, 40-49 deg 29 (the modal class), 50-59 deg 15; the mean of the
+# class midpoints is 40.6 deg. Ruth 1961 (via Edama2017): 10-45 deg in 75%.
+CFL_ANGLE_DEG = 40.0
+
 LIGAMENTS = [
     # ---- lateral collateral complex --------------------------------------
     # Taut onsets: Ozeki2002's zero-strain references (cadaver strain gauges
@@ -142,14 +151,16 @@ LIGAMENTS = [
              ("linear", 22.35e3), "assumed: half of Rochelle2020's whole-ATFL 44.7 N/mm", (0.0,),
              "assumed: zero strain at neutral (Vega2020: isometric through flexion, no tension value)",
              failure_load=131.8, reference_length=0.0106, reference_source="Vega2020",
-             notes="fibular origin shared with the CFL (Vega2020); talar insertion below the superior "
+             notes="fibular origin shared with the CFL in Vega2020; here it still uses the older anterior-border "
+                   "point, 18.7 mm from the tip (see fib_anterior_band); talar insertion below the superior "
                    "band's. Failure load: half of Rochelle2020's 263.6 N (assumed split)"),
     Ligament("CFL_r", "calcaneofibular", "tibia_r", "calcn_r",
              ("linear", 45.8e3), "measured: Rochelle2020", (17.8,),
              "measured: Ozeki2002 (zero strain at 17.8 +/- 6.4 deg DF)",
              failure_load=367.8, reference_length=0.0299, reference_source="Ozeki2002",
-             notes="nearly isometric over ankle flexion in this geometry, so it is set mainly by "
-                   "subtalar inversion (and talar tilt in the 6-DOF build)"),
+             notes="tightens in dorsiflexion (5.4 mm/rad on the Inman axes), so with Ozeki's onset it is "
+                   "about 1.6 mm slack at neutral; loaded by dorsiflexion, subtalar inversion and (6-DOF "
+                   "build) talar tilt"),
     Ligament("PTFL_r", "posterior talofibular", "tibia_r", "talus_r",
              ("linear", 59.0e3), "measured: Rochelle2020", (18.0,),
              "measured: Ozeki2002 (zero strain at 18.0 +/- 7.5 deg DF)",
@@ -308,10 +319,41 @@ def attachments(mesh_dir: Path) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     # Lateral malleolus: distal tip of the fibula.
     lm_tip = fib[fib[:, y].argmin()]
 
-    def fib_anterior(h: float) -> np.ndarray:
-        """Anterior border of the fibula, h metres proximal to the malleolar tip."""
+    def fib_anterior_band(h: float) -> np.ndarray:
+        """Most anterior fibular vertex in a band h metres above the malleolar tip (ATFL origins only: this
+        lands 22.5 mm from the tip, not Clanton2015's 13.8 mm, but with this mesh's talar insertion it gives a
+        near-horizontal ATFL of the right length; moving it is a separate, open question)."""
         band = np.abs(fib[:, y] - (lm_tip[y] + h)) < 0.004
         return _pick(fib, band, fib[:, x])
+
+    def fib_anterior(d: float) -> np.ndarray:
+        """Point on the anterior border of the lateral malleolus, d metres (straight line) from its tip.
+
+        The border is the antero-inferior outline of the distal fibula in the sagittal plane: the lower
+        convex hull of its vertices from the tip forwards. The point is interpolated along that outline,
+        so it does not snap to a vertex. (The earlier rule took the most anterior vertex in a height band
+        and put the CFL origin 18.7 mm and the ATFL origin 22.5 mm from the tip instead of 5.3 and 13.8;
+        the ATFL still uses it, see fib_anterior_band.)
+        """
+        distal = fib[(fib[:, y] < lm_tip[y] + 0.025) & (fib[:, x] >= lm_tip[x])]
+        distal = distal[np.argsort(distal[:, x])]
+        hull = [lm_tip]
+        for v in distal:
+            if v[x] <= hull[-1][x] + 1e-6:
+                continue
+            while len(hull) >= 2 and ((hull[-1][x] - hull[-2][x]) * (v[y] - hull[-2][y])
+                                      - (hull[-1][y] - hull[-2][y]) * (v[x] - hull[-2][x])) <= 0:
+                hull.pop()
+            hull.append(v)
+        for a, b in zip(hull[:-1], hull[1:]):
+            da, db = np.linalg.norm(a - lm_tip), np.linalg.norm(b - lm_tip)
+            if da <= d <= db:
+                # |a + s (b - a) - tip| = d
+                u, w = b - a, a - lm_tip
+                A, B, C = u @ u, 2 * (u @ w), w @ w - d * d
+                s = (-B + math.sqrt(B * B - 4 * A * C)) / (2 * A)
+                return a + s * u
+        raise ValueError(f"anterior fibular border shorter than {d * 1000:.1f} mm")
 
     # Medial malleolus: most distal tibial point on the medial side.
     medial = tib[:, z] < -0.010
@@ -377,13 +419,27 @@ def attachments(mesh_dir: Path) -> dict[str, tuple[np.ndarray, np.ndarray]]:
         # ATFL: fibular footprint 13.8 mm from the tip on the anterior border
         # (Clanton2015); talar insertion on the lateral talar body, anterior to
         # the lateral malleolar facet (most anterior vertex of the lateral face).
-        "ATFL_r": (fib_anterior(0.0138), _pick(tal, tal_lat, tal[:, x])),
+        "ATFL_r": (fib_anterior_band(0.0138), _pick(tal, tal_lat, tal[:, x])),
         # CFL: fibular footprint 5.3 mm from the tip on the anterior border
-        # (Clanton2015); calcaneal insertion on the lateral calcaneal wall,
-        # posterior-inferior to the fibular tip.
-        "CFL_r": (fib_anterior(0.0053),
-                  _pick(foot, foot_band(0.015, 0.040) & (foot[:, y] < 0.025), foot[:, z])),
+        # (Clanton2015). Calcaneal insertion: the vertex of the lateral calcaneal
+        # wall nearest the point one in-situ length (Ozeki2002, 29.9 mm) from
+        # that origin, along a line CFL_ANGLE_DEG behind the fibular long axis
+        # in the sagittal plane (Edama2017). The coarse foot mesh does not
+        # resolve the peroneal tubercle, Clanton2015's landmark for it.
+        "CFL_r": (fib_anterior(0.0053), None),
     }
+    cfl_o = pts["CFL_r"][0]
+    fc = fib - fib.mean(axis=0)
+    f_axis = np.linalg.eigh(fc.T @ fc)[1][:, -1]
+    f_axis = f_axis * np.sign(f_axis[y])                       # fibular long axis, pointing proximally
+    back = np.array([-1.0, 0.0, 0.0]) - (np.array([-1.0, 0.0, 0.0]) @ f_axis) * f_axis
+    back[z] = 0.0
+    back /= np.linalg.norm(back)
+    a = math.radians(CFL_ANGLE_DEG)
+    cfl_ref = next(L for L in LIGAMENTS if L.name == "CFL_r").reference_length
+    target = cfl_o + cfl_ref * (-math.cos(a) * f_axis + math.sin(a) * back) - BODY_ORIGIN_IN_TIBIA["calcn_r"]
+    wall = foot[:, z] > target[z] - 0.008                      # lateral wall, not the far side of the heel
+    pts["CFL_r"] = (cfl_o, _pick(foot, wall, -np.linalg.norm(foot - target, axis=1)))
     # PTFL: malleolar fossa (posteromedial distal fibula) to the posterior
     # process of the talus. The coarse talus mesh does not resolve the lateral
     # tubercle, so the insertion is the posterior-process vertex (posterior of
@@ -406,7 +462,7 @@ def attachments(mesh_dir: Path) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     # insertion and ~4 mm from the nearest mesh vertex.
     import ankle_axis as AX  # local import: ankle_axis imports this module
     T = BODY_ORIGIN_IN_TIBIA["talus_r"]
-    atfli_o = pts["CFL_r"][0]
+    atfli_o = fib_anterior_band(0.0053)
     c_ax, u_ax = AX.axis("inman", mesh_dir)
     C = c_ax + T
     o_rel = atfli_o - C
