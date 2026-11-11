@@ -196,7 +196,7 @@ def set_ankle_axis(model: ET.Element, femur: ET.Element, kind: str, mesh_dir: Pa
 
 def build(src: Path, out_dir: Path, knee_angle_deg: float | None, ligaments: bool = True,
           six_dof: bool = False, axis: str = "moving", swing_deg: float = AX.SWING_DEG,
-          subtalar: str = "contact") -> Path:
+          subtalar: str = "contact", navicular_stiffness: float | None = None) -> Path:
     if six_dof and axis == "moving":
         raise ValueError("the 6-DOF contact joint needs a fixed axis (its trochlea is a cylinder about it): "
                          "use axis='inman' or 'original'")
@@ -306,6 +306,8 @@ def build(src: Path, out_dir: Path, knee_angle_deg: float | None, ligaments: boo
     if six_dof:
         TC.add_joint(model, femur, mesh_dir)
         if subtalar == "contact":
+            if navicular_stiffness is not None:      # N/mm on the command line
+                ST.PARAMS["navicular_stiffness"] = (navicular_stiffness * 1e3,) + ST.PARAMS["navicular_stiffness"][1:]
             ST.add_joint(model, femur, mesh_dir)
 
     ET.indent(model, space="  ")
@@ -346,6 +348,10 @@ def main() -> None:
     p.add_argument("--swing-deg", type=float, default=AX.SWING_DEG,
                    help=f"moving axis: total change in coronal inclination across the flexion range "
                         f"(default {AX.SWING_DEG:g}, illustrative - see ankle_axis.py)")
+    p.add_argument("--navicular-stiffness", type=float, default=None, metavar="N_PER_MM",
+                   help="with the contact subtalar joint: how the navicular part of the talar-head socket is held "
+                        "to the calcaneus. Default rigid (inf); 0 removes it; a number springs it (N/mm). "
+                        "No measured value exists yet: see README, '6-DOF subtalar joint'")
     p.add_argument("--subtalar", choices=("hinge", "contact"), default="contact",
                    help="with --six-dof: 'contact' = 6-DOF subtalar joint with articular contact about an "
                         "anatomical axis (see subtalar.py); 'hinge' = MS-Human-700's 1-DOF hinge")
@@ -357,7 +363,7 @@ def main() -> None:
         p.error("--six-dof needs a fixed axis (its trochlea is a cylinder about it): use --axis inman or original")
     out = build(args.src, args.out, None if args.free_knee else args.knee_angle,
                 ligaments=not args.no_ligaments, six_dof=args.six_dof, axis=axis, swing_deg=args.swing_deg,
-                subtalar=args.subtalar)
+                subtalar=args.subtalar, navicular_stiffness=args.navicular_stiffness)
     print(f"wrote {out}")
 
 
