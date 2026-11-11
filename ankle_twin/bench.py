@@ -151,3 +151,74 @@ class Bench:
                 fn += f6[0]
                 pen = min(pen, c.dist)
         return fn, -pen
+
+
+class TendonPullRig:
+    """Astion 1997's rig: ankle screwed at neutral, foot free, the hindfoot moved by tendon pulls.
+
+    The talocrural joint is held at neutral (all six degrees of freedom on a 6-DOF build), as Astion's three
+    screws did. Constant tensions on the tibialis posterior and peroneus brevis tendons supinate and pronate
+    the foot (36 N on one, 11 N on the other). Gravity is off: the specimen lay plantar side up and the foot
+    was otherwise unloaded. An optional load presses the calcaneus towards the talus along the tibia;
+    Astion loaded the calcaneus but found it made no difference, and did not report the load.
+
+        rig = TendonPullRig(xml)
+        R_sup = rig.pose(tib_post=36, per_brev=11)    # calcaneus orientation in the talus frame
+        R_pro = rig.pose(tib_post=11, per_brev=36)
+        rig.rotation(R_sup, R_pro)                     # range of motion, deg
+    """
+
+    SCREWED = ("ankle_angle_r", "talus_tx_r", "talus_ty_r", "talus_tz_r", "talus_tilt_r", "talus_rot_r")
+
+    def __init__(self, xml: str | Path):
+        spec = mujoco.MjSpec.from_file(str(xml))
+        names = {j.name for j in spec.joints}
+        for j in self.SCREWED:
+            if j in names:
+                eq = spec.add_equality(name=f"screw_{j}", type=mujoco.mjtEq.mjEQ_JOINT,
+                                       objtype=mujoco.mjtObj.mjOBJ_JOINT, name1=j)
+                eq.solref = [0.004, 1.0]
+        self.m = spec.compile()
+        self.m.opt.gravity[:] = 0.0
+        self.d = mujoco.MjData(self.m)
+        self.tendons = {n: self.m.tendon(f"{n}_tendon").id for n in ("tibpost_r", "perbrev_r")}
+
+    def _row(self, tid: int) -> np.ndarray:
+        """Dense row of the tendon Jacobian (MuJoCo 3 stores it sparse, indexed by the model)."""
+        row = np.zeros(self.m.nv)
+        a, n = self.m.ten_J_rowadr[tid], self.m.ten_J_rownnz[tid]
+        row[self.m.ten_J_colind[a:a + n]] = self.d.ten_J[a:a + n]
+        return row
+
+    def pose(self, tib_post: float, per_brev: float, heel_load: float = 0.0, seconds: float = 2.0):
+        """Settle from neutral under the given tendon tensions (N). Returns the calcaneus orientation in the
+        talus frame (3x3), or None if the simulation diverged."""
+        m, d = self.m, self.d
+        mujoco.mj_resetData(m, d)
+        cal, tal = m.body("calcn_r").id, m.body("talus_r").id
+        t0 = d.time
+        bad0 = d.warning[mujoco.mjtWarning.mjWARN_BADQACC].number
+        while d.time - t0 < seconds:
+            if d.warning[mujoco.mjtWarning.mjWARN_BADQACC].number > bad0:
+                return None
+            d.qfrc_applied[:] = -(tib_post * self._row(self.tendons["tibpost_r"])
+                                  + per_brev * self._row(self.tendons["perbrev_r"]))
+            if heel_load:
+                tib = m.body("tibia_r").id
+                up = d.xmat[tib].reshape(3, 3)[:, 1]          # tibial long axis (y, superior)
+                mujoco.mj_applyFT(m, d, heel_load * up, np.zeros(3), d.xpos[cal], cal, d.qfrc_applied)
+            mujoco.mj_step(m, d)
+            if not np.all(np.isfinite(d.qpos)) or d.time < t0:
+                return None
+        return d.xmat[tal].reshape(3, 3).T @ d.xmat[cal].reshape(3, 3)
+
+    @staticmethod
+    def rotation(Ra: np.ndarray, Rb: np.ndarray) -> tuple[float, np.ndarray]:
+        """Angle (deg) and unit axis (talus frame) of the rotation taking orientation Ra to Rb."""
+        R = Ra.T @ Rb
+        ang = math.degrees(math.acos(max(-1.0, min(1.0, (np.trace(R) - 1) / 2))))
+        w = np.array([R[2, 1] - R[1, 2], R[0, 2] - R[2, 0], R[1, 0] - R[0, 1]])
+        return ang, Ra @ (w / (np.linalg.norm(w) + 1e-12))
+
+    def ligament_forces(self) -> dict[str, float]:
+        return {n: ligament_force(self.m, self.d, n) for n in LIGAMENTS if ligament_tendon_ids(self.m, n)}
