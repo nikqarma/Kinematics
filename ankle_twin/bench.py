@@ -259,7 +259,8 @@ class HindfootRig:
         t0 = self.d.time
         bad0 = self.d.warning[mujoco.mjtWarning.mjWARN_BADQACC].number
         while self.d.time - t0 < seconds:
-            if self.d.warning[mujoco.mjtWarning.mjWARN_BADQACC].number > bad0:
+            # MuJoCo resets the state (and the clock) when the simulation diverges, so also stop if time runs back.
+            if self.d.warning[mujoco.mjtWarning.mjWARN_BADQACC].number > bad0 or self.d.time < t0:
                 return False
             self.d.qfrc_applied[:] = 0
             for j, f in (("cradle_z", axial), ("cradle_x", drawer[0]), ("cradle_y", drawer[1]),

@@ -56,6 +56,21 @@ PARAMS = {
                                                  "inferior (calcaneal facets) and medial (spring ligament)"),
     "socket_rings_deg": ((30.0, 55.0), "deg", "assumed: cup covers about +-70 deg of the head"),
     "facet_rings_deg": ((18.0, 34.0), "deg", "assumed: facet ~30 x 22 mm on a 21 mm radius, about +-40 deg"),
+    # The socket has two parts. Plates within this angle of straight plantar are the anterior and middle
+    # calcaneal facets: bone, rigid with the calcaneus. The rest (anterior, medial, dorsal, lateral) is the
+    # navicular and the spring ligament, which are joined to the calcaneus only through the midtarsal joint
+    # and its ligaments (Astion 1997: with the subtalar joint fused the talonavicular joint keeps 26% of its
+    # motion and the calcaneocuboid joint 56%).
+    "socket_calcaneal_cone_deg": (45.0, "deg", "assumed: extent of the calcaneal facets under the talar head"),
+    # How the navicular part of the socket is held to the calcaneus: math.inf = rigid (the model's foot body
+    # is one piece; an upper bound on the constraint), 0 = absent (a lower bound), otherwise an isotropic
+    # translational stiffness in N/m.
+    "navicular_stiffness": (math.inf, "N/m", "bound: rigid; no measured midtarsal stiffness found"),
+    "navicular_damping": (200.0, "N*s/m", "numerical"),
+    "navicular_mass": (0.3, "kg", "assumed: the midfoot bones that move with the navicular"),
+    # A sprung socket is a stiff spring on a light body: explicit integration needs stiffness < 4 m / dt^2
+    # (4800 N/mm with these values; only 300 N/mm at MuJoCo's default 2 ms).
+    "navicular_timestep": (0.0005, "s", "numerical: used only when the socket is sprung"),
 }
 
 CONTACT = {
@@ -193,11 +208,35 @@ def add_joint(model: ET.Element, femur: ET.Element, mesh_dir: Path) -> dict:
         "name": "calcaneal_posterior_facet_r", "class": "cartilage", "type": "sphere", "size": f"{r_p - gap:.6g}",
         "pos": _fmt(c_p - calc_off), "contype": "32", "conaffinity": "0"})]
     rings = _p("socket_rings_deg")
-    calc += _cup("acetabulum_pedis", c_h - calc_off, r_h,
-                 _ring_directions(np.array(_p("socket_direction")), rings, (6, 8)),
-                 r_h * math.tan(math.radians(rings[0]) / 2) + 0.001, "16")
+    dirs = _ring_directions(np.array(_p("socket_direction")), rings, (6, 8))
+    half = r_h * math.tan(math.radians(rings[0]) / 2) + 0.001
+    plates = _cup("acetabulum_pedis", c_h - calc_off, r_h, dirs, half, "16")
+    cone = math.cos(math.radians(_p("socket_calcaneal_cone_deg")))
+    is_calcaneal = [-n[1] >= cone - 1e-9 for n in dirs]
+    navicular = [e for e, c_ in zip(plates, is_calcaneal) if not c_]
+    k_nav = _p("navicular_stiffness")
+    # Rigid: every plate stays on the calcaneus, in its original order (free-foot transients are sensitive to it).
+    calc += plates if math.isinf(k_nav) else [e for e, c_ in zip(plates, is_calcaneal) if c_]
     for k, e in enumerate(calc):
         calcn.insert(first + k, e)
+    if 0 < k_nav < math.inf:
+        # Navicular part of the socket on its own body, sprung to the calcaneus in translation.
+        option = model.find("option")
+        if option is None:
+            option = ET.SubElement(model, "option")
+        option.set("timestep", f"{_p('navicular_timestep'):g}")
+        centre = c_h - calc_off
+        nav = ET.Element("body", {"name": "navicular_socket_r", "pos": _fmt(centre)})
+        ET.SubElement(nav, "inertial", pos="0 0 0", mass=f"{_p('navicular_mass'):g}", diaginertia="1e-5 1e-5 1e-5")
+        for nm, ax in (("navicular_tx_r", "1 0 0"), ("navicular_ty_r", "0 1 0"), ("navicular_tz_r", "0 0 1")):
+            ET.SubElement(nav, "joint", {"name": nm, "type": "slide", "pos": "0 0 0", "axis": ax,
+                                         "range": "-0.015 0.015", "limited": "true", "stiffness": f"{k_nav:g}",
+                                         "damping": f"{_p('navicular_damping'):g}", "armature": "0"})
+        for e in navicular:
+            pos = np.array([float(v) for v in e.get("pos").split()]) - centre
+            e.set("pos", _fmt(pos))
+            nav.append(e)
+        calcn.append(nav)
 
     # The talus and calcaneus must now collide (their bone meshes do not: class "bone").
     contact = model.find("contact")
