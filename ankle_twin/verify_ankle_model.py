@@ -732,6 +732,54 @@ def instantaneous_axis(m: mujoco.MjModel, d: mujoco.MjData, q: float, h: float =
     return w if w[2] > 0 else -w
 
 
+# Astion D.J. et al. (1997) J Bone Joint Surg Am 79-A(2):241-246 (n = 10, full text). Range of motion from full
+# supination to full pronation under 36 N / 11 N tendon pulls, ankle screwed at neutral (mean, SD, deg).
+ASTION1997 = {"subtalar": (20.4, 8.0), "talonavicular": (36.7, 13.0), "calcaneocuboid": (14.4, 6.0)}
+
+
+def check_astion1997(xml: Path) -> None:
+    """Benchmark: hindfoot range of motion under Astion 1997's tendon pulls (bench.TendonPullRig).
+
+    The tibialis posterior (36 N) with the peroneus brevis (11 N) supinates the foot, and the reverse
+    pronates it, with the ankle screwed at neutral. Astion found larger loads gave no more motion, so these
+    are end ranges. The model's subtalar range is the rotation of the calcaneus relative to the talus between
+    the two poses. The talonavicular and calcaneocuboid ranges need a midfoot joint (the model's foot is one
+    body from calcaneus to metatarsals) and are not tested.
+    """
+    from bench import TendonPullRig
+    rig = TendonPullRig(xml)
+    print("\n  Astion 1997 benchmark (ankle screwed, 36 N / 11 N tibialis posterior and peroneus brevis pulls):")
+    poses = {}
+    for name, (tp, pb) in (("supination", (36.0, 11.0)), ("pronation", (11.0, 36.0))):
+        R = rig.pose(tp, pb)
+        if R is None:
+            check(False, f"Astion rig: {name} pose is stable")
+            return
+        f = {k: v for k, v in rig.ligament_forces().items() if v > 5}
+        poses[name] = (R, f)
+    rom, axis = TendonPullRig.rotation(poses["supination"][0], poses["pronation"][0])
+    m = rig.m
+    j = m.joint("subtalar_angle_r")
+    d0 = mujoco.MjData(m)
+    mujoco.mj_forward(m, d0)
+    tal = m.body("talus_r").id
+    st_axis = d0.xmat[tal].reshape(3, 3).T @ d0.xaxis[j.id]           # subtalar hinge axis in the talus frame
+    off = float(np.degrees(np.arccos(min(1.0, abs(float(axis @ st_axis))))))
+    for name in ("supination", "pronation"):
+        R0 = np.eye(3)
+        a, w = TendonPullRig.rotation(R0, poses[name][0])
+        sgn = np.sign(w @ st_axis)                                      # + = inversion, about the subtalar axis
+        lig = ", ".join(f"{k[:-2]} {v:.0f} N" for k, v in sorted(poses[name][1].items(), key=lambda kv: -kv[1]))
+        print(f"  {name:<11} {sgn * a:+5.1f} deg from neutral (+ = inversion); ligaments loaded: {lig or 'none'}")
+    mean, sd = ASTION1997["subtalar"]
+    print(f"  subtalar range {rom:.1f} deg (Astion {mean} +/- {sd}); rotation axis {off:.0f} deg from the model's "
+          f"subtalar axis")
+    print(f"  NOTE  talonavicular ({ASTION1997['talonavicular'][0]} deg) and calcaneocuboid "
+          f"({ASTION1997['calcaneocuboid'][0]} deg) ranges need a midfoot joint; not tested")
+    check(abs(rom - mean) <= 2 * sd, f"subtalar range under Astion's tendon pulls within 2 SD ({rom:.1f} vs "
+          f"{mean} +/- {sd} deg)")
+
+
 def check_moving_axis(m: mujoco.MjModel, d: mujoco.MjData) -> None:
     print("\n6. Moving talocrural axis")
     deg = np.degrees
@@ -862,6 +910,8 @@ def main() -> int:
         check_ligaments(am, ad)
     if any(am.joint(i).name == "talus_tx_r" for i in range(am.njnt)):
         check_six_dof(ANKLE_XML)
+    if has_ligs:
+        check_astion1997(ANKLE_XML)
 
     if moving:
         check_moving_axis(am, ad)
