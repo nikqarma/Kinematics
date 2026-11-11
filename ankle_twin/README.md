@@ -147,7 +147,7 @@ To view the model, drag `model/ankle_foot_r.xml` into MuJoCo's `simulate` viewer
 | Sprain order (6-DOF builds) | quasi-static supination ramped 1 N·m at a time at 30, 20 and 10° PF, subtalar free; each ligament is cut at its reported failure load. An ATFL band must fail first. Passes on `inman`; KNOWN at 30° PF on `--axis original`, where holding the ankle there already loads the TNL past its failure load |
 | Stormont 1985 loaded stability (6-DOF builds) | 700 N axial load, 3 N·m inversion, lateral ligaments cut: the talus must stay seated. Passes on both axes with the anatomical mortise (0.1° tilt) |
 | Colville 1990 benchmark (6-DOF builds) | lateral-ligament length change with flexion, 3 N·m inversion and 3 N·m internal rotation, subtalar locked. All pass on both axes |
-| Astion 1997 benchmark (all builds with ligaments) | subtalar range of motion from full supination to full pronation under 36 N / 11 N tibialis posterior and peroneus brevis pulls, ankle screwed (`bench.TendonPullRig`). Asserted within 2 SD of 20.4 ± 8°: 17.8° on every `main` build |
+| Astion 1997 benchmark (all builds with ligaments) | subtalar range of motion from full supination to full pronation under 36 N / 11 N tibialis posterior and peroneus brevis pulls, ankle screwed (`bench.TendonPullRig`). Asserted within 2 SD of 20.4 ± 8°. On this branch it is **KNOWN**: the fitted subtalar spring limits the range to 4.1° (17.8° without it) |
 | Forward dynamics | stable; knee lock holds; soleus plantarflexes, tibialis anterior dorsiflexes |
 
 ## Ankle axis (`--axis moving | inman | original`)
@@ -263,7 +263,7 @@ The `original` axis's earlier failures at 20° DF (the talus sat 3–8 mm anteri
 - **CFL in flexion:** on the hinge path the CFL now lengthens toward DF as Colville found, but in this test the talus is free and the deltoid tilts it into inversion in plantarflexion, which lengthens the CFL again (**KNOWN**). Colville also saw a slight rise at 30° PF.
 - **PTFL with inversion:** lengthens; Colville found a slight decrease.
 
-**Astion 1997 benchmark (all builds).** `bench.TendonPullRig` reproduces Astion's rig: ankle screwed at neutral, the foot free, the tibialis posterior (36 N) with the peroneus brevis (11 N) supinating it and the reverse pronating it; Astion found larger loads gave no more motion, so these are end ranges (n = 10). The subtalar range is the calcaneus's rotation relative to the talus between the two poses.
+**Astion 1997 benchmark (all builds; KNOWN on this branch).** `bench.TendonPullRig` reproduces Astion's rig: ankle screwed at neutral, the foot free, the tibialis posterior (36 N) with the peroneus brevis (11 N) supinating it and the reverse pronating it; Astion found larger loads gave no more motion, so these are end ranges (n = 10). The subtalar range is the calcaneus's rotation relative to the talus between the two poses.
 
 | | `inman` / `moving` | `original` | Astion |
 |---|---|---|---|
@@ -271,6 +271,7 @@ The `original` axis's earlier failures at 20° DF (the talus sat 3–8 mm anteri
 | Supination, stopped by | +14.9°, cervical ligament (18 N) | +14.8°, cervical ligament and CFL | |
 | Pronation, stopped by | −2.8°, ITCL (74 N) | −2.8°, ITCL (74 N) | |
 
+- **On this branch the check is KNOWN (4.1°).** The fitted subtalar inversion spring stops supination at +1.3°, so only the −2.8° of pronation remains. The spring was fitted to Pellegrini 2016, whose stiffness comes from a cradle forcing the heel to turn off the joint's own axis. Astion's tendon pulls let the joint turn about its own axis, which the spring blocks. The table shows the joint without the spring, as on `main`; `research-twin`'s contact joint gives 30.9°. So the spring reproduces Pellegrini's rig but makes the joint far too stiff when the foot moves freely, as in a sprain. Replacing it with the contact joint is tracked in Jira AT-23.
 - **The range passes but is lopsided.** Almost all of it is supination. Pronation stops after 2.8° because the ITCL tightens in eversion with this geometry, where Knudson 1997 found it restrains supination (see "Subtalar ligaments").
 - **Not tested yet:** the talonavicular (36.7 ± 13°) and calcaneocuboid (14.4 ± 6°) ranges, and what each joint keeps after the others are fused. They need a midfoot joint; the model's foot is one body from calcaneus to metatarsals.
 - **Calcaneal load:** Astion loaded the calcaneus but did not report how much, and found it made no difference. The rig applies none by default; a load of 40 N or more at the calcaneal origin inverts the foot on its own, so a larger load would need a better-placed point.

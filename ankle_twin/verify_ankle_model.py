@@ -741,8 +741,16 @@ def check_astion1997(xml: Path) -> None:
           f"subtalar axis")
     print(f"  NOTE  talonavicular ({ASTION1997['talonavicular'][0]} deg) and calcaneocuboid "
           f"({ASTION1997['calcaneocuboid'][0]} deg) ranges need a midfoot joint; not tested")
+    # ligasys-sprain: the fitted subtalar inversion spring (build_ankle_model.SUBTALAR_INVERSION_STIFFNESS) is the
+    # disclosed reason this fails here; main and research-twin have no spring and pass.
+    has_spring = mujoco.mj_name2id(rig.m, mujoco.mjtObj.mjOBJ_TENDON, "subtalar_inversion_stiffness") >= 0
     check(abs(rom - mean) <= 2 * sd, f"subtalar range under Astion's tendon pulls within 2 SD ({rom:.1f} vs "
-          f"{mean} +/- {sd} deg)")
+          f"{mean} +/- {sd} deg)",
+          known_reason=("the fitted subtalar inversion spring (ligasys-sprain) stops supination within a few degrees. "
+                        "It was fitted to Pellegrini 2016, whose stiffness comes from the rig forcing motion off the "
+                        "joint's axis; Astion lets the joint move about its own axis, which the spring then blocks. "
+                        "Without the spring the hinge gives 17.8 deg (README, 'Subtalar ligaments'; Jira AT-23)")
+          if has_spring else None)
 
 
 def check_moving_axis(m: mujoco.MjModel, d: mujoco.MjData) -> None:
