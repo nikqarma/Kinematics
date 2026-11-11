@@ -147,6 +147,7 @@ To view the model, drag `model/ankle_foot_r.xml` into MuJoCo's `simulate` viewer
 | Sprain order (6-DOF builds) | quasi-static supination ramped 1 N·m at a time at 30, 20 and 10° PF, subtalar free; each ligament is cut at its reported failure load. An ATFL band must fail first. Passes on `inman`; KNOWN at 30° PF on `--axis original`, where holding the ankle there already loads the TNL past its failure load |
 | Stormont 1985 loaded stability (6-DOF builds) | 700 N axial load, 3 N·m inversion, lateral ligaments cut: the talus must stay seated. Passes on both axes with the anatomical mortise (0.1° tilt) |
 | Colville 1990 benchmark (6-DOF builds) | lateral-ligament length change with flexion, 3 N·m inversion and 3 N·m internal rotation, subtalar locked. All pass on both axes |
+| Astion 1997 benchmark (all builds with ligaments) | subtalar range of motion from full supination to full pronation under 36 N / 11 N tibialis posterior and peroneus brevis pulls, ankle screwed (`bench.TendonPullRig`). Asserted within 2 SD of 20.4 ± 8°: 17.8° on every `main` build |
 | Forward dynamics | stable; knee lock holds; soleus plantarflexes, tibialis anterior dorsiflexes |
 
 ## Ankle axis (`--axis moving | inman | original`)
@@ -262,6 +263,18 @@ The `original` axis's earlier failures at 20° DF (the talus sat 3–8 mm anteri
 - **CFL in flexion:** on the hinge path the CFL now lengthens toward DF as Colville found, but in this test the talus is free and the deltoid tilts it into inversion in plantarflexion, which lengthens the CFL again (**KNOWN**). Colville also saw a slight rise at 30° PF.
 - **PTFL with inversion:** lengthens; Colville found a slight decrease.
 
+**Astion 1997 benchmark (all builds).** `bench.TendonPullRig` reproduces Astion's rig: ankle screwed at neutral, the foot free, the tibialis posterior (36 N) with the peroneus brevis (11 N) supinating it and the reverse pronating it; Astion found larger loads gave no more motion, so these are end ranges (n = 10). The subtalar range is the calcaneus's rotation relative to the talus between the two poses.
+
+| | `inman` / `moving` | `original` | Astion |
+|---|---|---|---|
+| Subtalar range | 17.8° | 17.6° | 20.4 ± 8° |
+| Supination, stopped by | +14.9°, cervical ligament (18 N) | +14.8°, cervical ligament and CFL | |
+| Pronation, stopped by | −2.8°, ITCL (74 N) | −2.8°, ITCL (74 N) | |
+
+- **The range passes but is lopsided.** Almost all of it is supination. Pronation stops after 2.8° because the ITCL tightens in eversion with this geometry, where Knudson 1997 found it restrains supination (see "Subtalar ligaments").
+- **Not tested yet:** the talonavicular (36.7 ± 13°) and calcaneocuboid (14.4 ± 6°) ranges, and what each joint keeps after the others are fused. They need a midfoot joint; the model's foot is one body from calcaneus to metatarsals.
+- **Calcaneal load:** Astion loaded the calcaneus but did not report how much, and found it made no difference. The rig applies none by default; a load of 40 N or more at the calcaneal origin inverts the foot on its own, so a larger load would need a better-placed point.
+
 **Why it is not the default:**
 1. **It does not fix the end-range strain problem.** Flexion still happens about the same fixed axis. On the `inman` axis ATFL strain at 35° plantarflexion is about 25% (hinge 26%).
 2. **Some of the mortise is assumed.** The pivot sphere's radius and height and the fibula's stiffnesses are assumptions; the taper is measured.
@@ -355,6 +368,7 @@ The experimental 6-DOF joint (above) addresses limitation 4. It does **not** fix
 - Rochelle D. et al. (2020) *J Mech Behav Biomed Mater* 102:103473. doi:10.1016/j.jmbbm.2019.103473: ATFL/CFL/PTFL stiffness and failure loads at 100 %/s.
 - Takao M. et al. (2021) *BMC Musculoskelet Disord* 22:558: ATFL and CFL strain changes (onsets superseded by Ozeki 2002).
 - Ozeki S. et al. (2002) *Foot Ankle Int* 23(9):825–832: zero-strain onset angles (ATFL 16.2° PF, CFL 17.8° DF, PTFL 18.0° DF), in-situ lengths and length changes (author's thesis summary; journal tables not yet checked).
+- Astion D.J., Deland J.T., Otis J.C., Kenneally S. (1997) *J Bone Joint Surg Am* 79-A(2):241–246: subtalar, talonavicular and calcaneocuboid range under tendon pulls, intact and after simulated arthrodesis, read in full text.
 - Bahr R. et al. (1997) *Acta Orthop Scand* 68(5):435–441: ATFL/CFL force increases in drawer and talar-tilt tests (Tables 2–3), read in full text.
 - Colville M.R. et al. (1990) *Am J Sports Med* 18(2):196–200: lateral-ligament strain vs flexion with 3 N·m inversion, eversion and rotation moments, subtalar fixed (Figs 1–3), read in full text.
 - Michels F. et al. (2022) *Foot Ankle Surg* 28(7):1014–1020: stiffness, failure load, elongation at failure and in-situ length of the CFL, cervical ligament and ACaL–ITCL complex (accepted manuscript).
