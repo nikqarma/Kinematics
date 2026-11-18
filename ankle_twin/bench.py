@@ -182,6 +182,12 @@ class HindfootRig:
     subtalar joint. Loads act on the cradle: an axial load pressing the heel towards the tibia
     (36 N in the paper), torques about the two axes and drawer forces on the platform.
 
+    On a midfoot build the forefoot also rests on the cradle: Pellegrini "elevated [the forefoot]
+    level with the heel" on it. A frictionless plate on the cradle touches the metatarsal heads at
+    neutral and can push them up but not pull them down, so the midfoot cannot drop and pivot about
+    the calcaneocuboid joint, as it would hanging free. (Without a midfoot body the foot is rigid
+    with the calcaneus and the rest changes nothing.)
+
         rig = HindfootRig(xml, ankle_deg=0)
         rig.pin_ankle()
         rig.settle(0.5)                     # seat under the axial load, both rotations locked
@@ -191,6 +197,7 @@ class HindfootRig:
     """
 
     AXES = {"roll": "cradle_roll", "yaw": "cradle_yaw"}
+    REST_SPHERE = 0.008      # m; the metatarsal heads, for the forefoot rest (midfoot builds)
 
     def __init__(self, xml: str | Path, ankle_deg: float = 0.0):
         spec = mujoco.MjSpec.from_file(str(xml))
@@ -217,6 +224,17 @@ class HindfootRig:
                                  objtype=mujoco.mjtObj.mjOBJ_BODY, name1="cradle", name2="calcn_r")
         weld.data[:11] = [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1]     # same pose as the calcaneus
         weld.solref = [0.004, 1.0]
+        mid = next((b for b in spec.bodies if b.name == "midfoot_r"), None)
+        if mid is not None:
+            # forefoot rest: a sphere at the metatarsal heads on the midfoot, a plate under it on the cradle
+            r, half = self.REST_SPHERE, 0.002
+            head = ChopartStressRig.ROPE                         # calcn_r frame (= cradle frame)
+            mid.add_geom(name="forefoot_rest_ball", type=mujoco.mjtGeom.mjGEOM_SPHERE, size=[r, 0, 0],
+                         pos=head - np.array(mid.pos), contype=0, conaffinity=0, mass=0, group=3)
+            cradle.add_geom(name="forefoot_rest_plate", type=mujoco.mjtGeom.mjGEOM_BOX, size=[0.03, half, 0.03],
+                            pos=head - np.array([0.0, r + half, 0.0]), contype=0, conaffinity=0, mass=0, group=3)
+            pair = spec.add_pair(geomname1="forefoot_rest_ball", geomname2="forefoot_rest_plate")
+            pair.condim, pair.solref = 1, [0.004, 1.0]
         self._pin = [j for j in ("ankle_angle_r",) + TALAR_PLAY if _has_joint(spec, j)]
         for j in self._pin + list(self.AXES.values()):
             eq = spec.add_equality(name=f"lock_{j}", type=mujoco.mjtEq.mjEQ_JOINT,
