@@ -316,7 +316,7 @@ Estimated stiffness is k = C × width ÷ length with C = 130 N/mm: the mean stif
 | Baumbach: talonavicular displacement, axial / medial / lateral | - | 0.7 / 2.3 / 2.8 mm | 0.75 / 2.35 / 2.9 mm |
 | Baumbach: calcaneocuboid displacement, axial / medial / lateral | - | **2.3 / 4.7 / 5.1 mm** | 0.15 / 0.8 / 1.8 mm |
 
-All pass except Baumbach's calcaneocuboid displacements (the verifier reports 3 failures on this build; the five standard builds are unaffected).
+All pass except Baumbach's calcaneocuboid displacements, which the verifier reports as KNOWN on midfoot builds (no calcaneocuboid contact; see below). The five standard builds are unaffected.
 
 **Sensitivity (2026-11-18).** Each estimated group scaled ×0.25 to ×4 (both together too), with Hicks's stops and with ±30° guards:
 - **Plantar ligaments: no effect on any Astion range,** and calcaneocuboid displacement under the lateral load only moves 7.1 → 4.0 mm across a 16-fold range. Measured plantar stiffness (Huang 1993 and the like) would not change these results.

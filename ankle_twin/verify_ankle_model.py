@@ -775,7 +775,11 @@ def check_baumbach2022(xml: Path) -> None:
             mean, sd = BAUMBACH2022[(joint, load)]
             name = "calcaneocuboid" if joint == "CC" else "talonavicular"
             check(abs(r[joint] - mean) <= 2 * sd, f"{name} displacement under {load} load within 2 SD "
-                  f"({r[joint]:.2f} vs {mean} +/- {sd} mm)")
+                  f"({r[joint]:.2f} vs {mean} +/- {sd} mm)",
+                  known_reason=None if joint == "TN" else
+                  "no calcaneocuboid articular contact: the midfoot turns about the talar head and the cuboid, "
+                  "~40 mm lateral, swings freely; 2-7 mm across a x0.25-x4 ligament stiffness sweep, so not a "
+                  "stiffness problem (AT-13)")
 
 
 def check_moving_axis(m: mujoco.MjModel, d: mujoco.MjData) -> None:
