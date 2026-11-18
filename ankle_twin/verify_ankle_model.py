@@ -779,7 +779,7 @@ def check_baumbach2022(xml: Path) -> None:
                   known_reason=None if joint == "TN" else
                   "no calcaneocuboid articular contact: the midfoot turns about the talar head and the cuboid, "
                   "~40 mm lateral, swings freely; 2-7 mm across a x0.25-x4 ligament stiffness sweep, so not a "
-                  "stiffness problem (AT-13)")
+                  "stiffness problem (AT-26)")
 
 
 def check_moving_axis(m: mujoco.MjModel, d: mujoco.MjData) -> None:

@@ -324,7 +324,7 @@ All pass except Baumbach's calcaneocuboid displacements, which the verifier repo
 - **The calcaneocuboid failure is structural, not a stiffness problem.** It stays at 2–7 mm across the whole sweep. Rotating about the talar head swings the cuboid, 40 mm lateral, through the full rotation; in the foot the calcaneocuboid joint's saddle (Baumbach: "bony anatomy") blocks this. The model has no calcaneocuboid contact.
 - **The front-to-back hinge is held only by its stops.** It sits on its +4° stop in every Astion pose and most Baumbach loads; with ±30° guards it turns 19–24°. No modelled ligament has much lever about it.
 
-Next steps (AT-13): a calcaneocuboid articular contact, and the dorsal talonavicular's width and zero-strain length.
+Next steps: a calcaneocuboid articular contact (Jira AT-26), and the dorsal talonavicular's width and zero-strain length (AT-27).
 
 ## Known limitations: read before using ligament forces
 
