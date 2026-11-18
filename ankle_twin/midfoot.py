@@ -53,6 +53,9 @@ GUARD_DEG = 30.0
 
 TALUS_IN_CALCN = -np.array([-0.04877, -0.04195, 0.00792])   # talus_r origin in the calcn_r frame
 HEAD_CENTRE = HEAD_CENTRE_TALUS + TALUS_IN_CALCN               # midfoot_r origin in the calcn_r frame
+# The contact midfoot in development (Jira AT-26, AT-16) uses midfoot_facets.py instead: talar head, navicular
+# coverage and calcaneocuboid contact pairs from the KU Leuven CT bones, all mapped by one registration of the
+# anterior calcaneus. Its head centre lies 8 mm from HEAD_CENTRE_TALUS, which this hinge joint keeps.
 
 # ---- ligament stiffness ------------------------------------------------------------------------------
 # Hofstede 1999 Table 1 / 3: (shortest span, longest span, width) mm and stiffness N/mm per 7 mm strip,

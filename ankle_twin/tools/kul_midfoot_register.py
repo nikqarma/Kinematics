@@ -17,7 +17,27 @@ Method
 
 Prints the constants used by midfoot.py.
 
-Usage: python tools/kul_midfoot_register.py <kul_footmodel folder>
+With --facets OUT.py it also writes the articular facet geometry for the contact midfoot (Jira AT-26,
+AT-16; Confluence "Design: midfoot contact and navicular socket"):
+  5. Facet patches on the KU Leuven bones: calcaneocuboid = calcaneus and cuboid vertices within 3 mm of
+     each other and over 6 mm from the talus; talonavicular = talus and navicular vertices within 4 mm.
+  6. A second similarity registration, of the anterior 40% of the KU Leuven calcaneus onto the anterior
+     40% of this model's calcaneus. The whole-foot registration leaves the calcaneal facet about 7 mm off
+     this model's calcaneus; this one puts it on the surface (median 2 mm; this model's mesh is coarse).
+     Both calcaneocuboid facets are mapped by it, so they stay congruent; the cuboid facet then sits a
+     few mm proximal of this model's cuboid mesh, whose joint space is wider (5 mm).
+  7. The talar head (sphere through its articular patch) and the navicular facet's coverage are mapped
+     by the same transform, so the whole joint set comes from one subject in one pose. The mapped head
+     lies on this model's talus surface (median 2 mm) but 8 mm from midfoot.HEAD_CENTRE_TALUS, a sphere
+     fit to the coarse talus mesh that the hinge midfoot keeps; with that centre the calcaneocuboid facet
+     would cut into the head.
+  8. Calcaneocuboid contact pairs: cuboid facet vertices about 4 mm apart (farthest-point sampling),
+     each paired with its closest point on the KU Leuven calcaneus surface (triangles). The pair's
+     direction is the calcaneal surface normal there, and its length the local joint space, so every
+     pair is congruent and open at neutral by construction. (Height fields over one mid-plane do not
+     work: the saddle facets curl at their edges.)
+
+Usage: python tools/kul_midfoot_register.py <kul_footmodel folder> [--facets midfoot_facets.py]
 """
 from __future__ import annotations
 
@@ -158,12 +178,195 @@ def hicks_landmark_axes(tal, cal, mid):
     return unit(sm_head - inf_lat), unit(sup_nav - post_lat)
 
 
+def near_dist(a: np.ndarray, b: np.ndarray, cut: float = 0.008) -> np.ndarray:
+    """Distance from each point of a to the nearest point of b, exact up to cut (beyond it: cut)."""
+    cells: dict[tuple, list[int]] = {}
+    for i, k in enumerate(map(tuple, np.floor(b / cut).astype(int))):
+        cells.setdefault(k, []).append(i)
+    out = np.full(len(a), cut)
+    for i, k in enumerate(np.floor(a / cut).astype(int)):
+        idx = [j for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1)
+               for j in cells.get((k[0] + dx, k[1] + dy, k[2] + dz), ())]
+        if idx:
+            out[i] = min(cut, float(np.sqrt(((b[idx] - a[i]) ** 2).sum(1)).min()))
+    return out
+
+
+def load_triangles(path: Path) -> np.ndarray:
+    """Triangles (n, 3, 3) of a binary or ASCII STL."""
+    data = path.read_bytes()
+    if data[:5].lower() == b"solid" and b"facet" in data[:400]:
+        return np.array(re.findall(rb"vertex\s+(\S+)\s+(\S+)\s+(\S+)", data), dtype=float).reshape(-1, 3, 3)
+    n = int.from_bytes(data[80:84], "little")
+    return np.frombuffer(data, dtype=np.dtype([("n", "<f4", 3), ("v", "<f4", (3, 3)), ("a", "<u2")]),
+                         count=n, offset=84)["v"].astype(float)
+
+
+def closest_on_triangles(q: np.ndarray, tri: np.ndarray) -> np.ndarray:
+    """Closest point to q on a set of triangles (Ericson, Real-Time Collision Detection 5.1.5)."""
+    best, bd = None, np.inf
+    for a, b, c in tri:
+        ab, ac, ap = b - a, c - a, q - a
+        d1, d2 = ab @ ap, ac @ ap
+        if d1 <= 0 and d2 <= 0:
+            x = a
+        else:
+            bp = q - b
+            d3, d4 = ab @ bp, ac @ bp
+            cp = q - c
+            d5, d6 = ab @ cp, ac @ cp
+            vc, vb, va = d1 * d4 - d3 * d2, d5 * d2 - d1 * d6, d3 * d6 - d5 * d4
+            if d3 >= 0 and d4 <= d3:
+                x = b
+            elif d6 >= 0 and d5 <= d6:
+                x = c
+            elif vc <= 0 and d1 >= 0 and d3 <= 0:
+                x = a + d1 / (d1 - d3) * ab
+            elif vb <= 0 and d2 >= 0 and d6 <= 0:
+                x = a + d2 / (d2 - d6) * ac
+            elif va <= 0 and d4 - d3 >= 0 and d5 - d6 >= 0:
+                x = b + (d4 - d3) / ((d4 - d3) + (d5 - d6)) * (c - b)
+            else:
+                den = 1.0 / (va + vb + vc)
+                x = a + ab * vb * den + ac * vc * den
+        d = float(((q - x) ** 2).sum())
+        if d < bd:
+            best, bd = x, d
+    return best
+
+
+def contact_pairs(cub: np.ndarray, cal_tri: np.ndarray, spacing: float = 0.004):
+    """Cuboid points ~spacing apart and their closest points on the calcaneal triangles (same frame)."""
+    keep = [int(np.argmin(np.linalg.norm(cub - cub.mean(0), axis=1)))]
+    dmin = np.linalg.norm(cub - cub[keep[0]], axis=1)
+    while dmin.max() > spacing:
+        i = int(np.argmax(dmin))
+        keep.append(i)
+        dmin = np.minimum(dmin, np.linalg.norm(cub - cub[i], axis=1))
+    near = cal_tri[np.linalg.norm(cal_tri.mean(1)[:, None, :] - cub[None, :, :], axis=2).min(1) < 0.008]
+    q = cub[keep]
+    p = np.array([closest_on_triangles(x, near) for x in q])
+    n = (q - p) / np.linalg.norm(q - p, axis=1)[:, None]
+    return p, n, q
+
+
+FACETS_TEMPLATE = '''"""Articular facet geometry for the contact midfoot. GENERATED by tools/kul_midfoot_register.py --facets;
+do not edit by hand.
+
+Source: KU Leuven foot model CT bones (Malaquias T., Silveira C., Aerts W., De Groote F., Dereymaeker G.,
+Vander Sloten J., Jonkers I. (2016) Extended foot-ankle musculoskeletal models for application in movement
+analysis. Comput Methods Biomech Biomed Engin; SimTK kul_footmodel), CC BY 3.0. One subject. Mapped onto
+this model by a similarity registration of the anterior calcaneus (scale {s:.3f}, mean surface distance
+{res:.1f} mm); see the tool's docstring for the method.
+
+Frame: calcn_r, metres, at midtarsal neutral. Facet rows: point x, y, z, then outward unit normal.
+"""
+
+# Talar head: sphere through the KU Leuven talar head's articular patch ({nhead} vertices, rms {hrms:.2f} mm,
+# r {hr:.2f} mm), mapped. Centre in the talus_r frame (talus_r origin at midfoot.TALUS_IN_CALCN at neutral);
+# {hoff:.1f} mm from midfoot.HEAD_CENTRE_TALUS, which the hinge midfoot keeps.
+HEAD_CENTRE_TALUS = ({h0:.6f}, {h1:.6f}, {h2:.6f})
+HEAD_RADIUS = {head_radius:.5f}
+
+# Navicular facet's coverage of the talar head: central direction (calcn_r frame) and, per 30 deg azimuth
+# sector about it (azimuth 0 along cross(direction, +y)), the largest polar angle covered, deg.
+NAVICULAR_DIRECTION = ({c0:.4f}, {c1:.4f}, {c2:.4f})
+NAVICULAR_OUTLINE_DEG = {outline}
+
+# Calcaneocuboid contact pairs: row i of CC_CUBOID is a cuboid facet point (about 4 mm apart), row i of
+# CC_CALCANEAL its closest point on the calcaneus; the normal is the pair's direction (calcaneal surface
+# normal), pointing to the cuboid in CC_CALCANEAL and to the calcaneus in CC_CUBOID. Joint space: KU Leuven
+# before scaling min {gmin:.2f}, median {gmed:.2f} mm; the pairs, mapped: {nmin:.2f} to {nmax:.2f} mm (median {nmed:.2f}).
+CC_SPACING = 0.004
+CC_CALCANEAL = (
+{cal_rows}
+)
+CC_CUBOID = (
+{cub_rows}
+)
+'''
+
+
+def facets(kul: Path, osim, o_cal: np.ndarray, out: Path) -> None:
+    """Steps 5-7: write the contact midfoot's facet geometry module."""
+    def loc(joint):
+        j = next(e for e in osim.iter("CustomJoint") if e.get("name") == joint)
+        return np.array([float(c) for c in j.find(".//location_in_parent").text.split()])
+
+    import midfoot as MF  # noqa: E402
+
+    tal = load_any(kul / "model_r_talus.stl") - loc("Subtalar_r")          # KU Leuven calcn frame
+    cal = load_any(kul / "model_r_calcaneus.stl")
+    mid = load_any(kul / "model_r_midfoot.stl") + loc("Chopart_r")
+    d_cal_mid, d_cal_tal = near_dist(cal, mid), near_dist(cal, tal)
+    d_mid_cal, d_mid_tal = near_dist(mid, cal), near_dist(mid, tal)
+    on_cal = (d_cal_mid < 0.003) & (d_cal_tal > 0.006)
+    cc_cal, gap = cal[on_cal], d_cal_mid[on_cal]
+    cc_cub = mid[(d_mid_cal < 0.003) & (d_mid_tal > 0.006)]
+    head = tal[near_dist(tal, mid) < 0.004]
+    nav = mid[d_mid_tal < 0.004]
+    hc, hr = sphere_fit(head)
+    hrms = float(np.sqrt(np.mean((np.linalg.norm(head - hc, axis=1) - hr) ** 2)))
+
+    ka = cal[cal[:, 0] > cal[:, 0].max() - 0.4 * np.ptp(cal[:, 0])]
+    oa = o_cal[o_cal[:, 0] > o_cal[:, 0].max() - 0.4 * np.ptp(o_cal[:, 0])]
+    s, R, t, res = icp([subsample(ka)], [oa])
+
+    def m(p):
+        return s * p @ R.T + t
+
+    cal_tri = load_triangles(kul / "model_r_calcaneus.stl")
+    p_cal, n_cal, p_cub = contact_pairs(m(cc_cub), m(cal_tri.reshape(-1, 3)).reshape(-1, 3, 3))
+    n_cub = -n_cal
+    node_gap = np.linalg.norm(p_cub - p_cal, axis=1)
+    h_calcn = m(hc)
+    h_talus = h_calcn - MF.TALUS_IN_CALCN
+
+    dirs = ((nav - hc) / np.linalg.norm(nav - hc, axis=1)[:, None]) @ R.T
+    c = dirs.mean(0)
+    c /= np.linalg.norm(c)
+    e1 = np.cross(c, [0.0, 1.0, 0.0])
+    e1 /= np.linalg.norm(e1)
+    e2 = np.cross(c, e1)
+    az = np.degrees(np.arctan2(dirs @ e2, dirs @ e1))
+    polar = np.degrees(np.arccos(np.clip(dirs @ c, -1, 1)))
+    outline = []
+    for a0 in range(-180, 180, 30):
+        sel = (az >= a0) & (az < a0 + 30)
+        outline.append((a0 + 15, round(float(polar[sel].max()), 1) if sel.any() else 0.0))
+
+    centre = 0.5 * (p_cal.mean(0) + p_cub.mean(0))
+    print(f"# facets: anterior-calcaneus registration scale {s:.3f}, mean surface distance {res[0] * 1e3:.1f} mm")
+    print(f"# calcaneocuboid: {len(cc_cal)} / {len(cc_cub)} KU Leuven vertices -> {len(p_cal)} / {len(p_cub)} "
+          f"samples; KU Leuven gap min {gap.min() * 1e3:.2f}, median {np.median(gap) * 1e3:.2f} mm; centre "
+          f"{np.round(centre * 1e3, 1)} mm calcn frame")
+    print(f"# contact-pair joint space {node_gap.min() * 1e3:.2f} to {node_gap.max() * 1e3:.2f} mm (median "
+          f"{np.median(node_gap) * 1e3:.2f}); facet clear of the head sphere by "
+          f"{(np.linalg.norm(np.r_[p_cal, p_cub] - h_calcn, axis=1).min() - hr * s) * 1e3:.1f} mm")
+    print(f"# talar head: KU Leuven articular sphere r {hr * 1e3:.1f} mm (rms {hrms * 1e3:.2f}) -> {hr * s * 1e3:.1f} mm, "
+          f"centre {np.round(h_talus * 1e3, 2)} mm talus frame, {np.linalg.norm(h_calcn - MF.HEAD_CENTRE) * 1e3:.1f} mm "
+          f"from HEAD_CENTRE_TALUS; navicular facet {len(nav)} vertices, up to {max(p for _, p in outline):.0f} deg "
+          f"from its centre direction")
+
+    def rows(p, n):
+        return "\n".join(f"    ({a[0]:.5f}, {a[1]:.5f}, {a[2]:.5f}, {b[0]:+.4f}, {b[1]:+.4f}, {b[2]:+.4f}),"
+                         for a, b in zip(p, n))
+
+    out.write_text(FACETS_TEMPLATE.format(
+        s=s, res=res[0] * 1e3, nhead=len(head), hrms=hrms * 1e3, hr=hr * 1e3, head_radius=hr * s,
+        h0=h_talus[0], h1=h_talus[1], h2=h_talus[2], hoff=np.linalg.norm(h_calcn - MF.HEAD_CENTRE) * 1e3,
+        nmin=node_gap.min() * 1e3, nmax=node_gap.max() * 1e3, nmed=float(np.median(node_gap)) * 1e3,
+        c0=c[0], c1=c[1], c2=c[2], outline=tuple(outline), gmin=gap.min() * 1e3, gmed=float(np.median(gap)) * 1e3,
+        cal_rows=rows(p_cal, n_cal), cub_rows=rows(p_cub, n_cub)), encoding="utf-8", newline="\n")
+    print(f"wrote {out}")
+
+
 def describe(u):
     return (f"elevation {math.degrees(math.asin(u[1])):+.1f} deg, "
             f"medial {math.degrees(math.atan2(-u[2], u[0])):+.1f} deg")
 
 
-def main(kul: Path) -> None:
+def main(kul: Path, facets_out: Path | None = None) -> None:
     osim = ET.parse(kul / "KULeuven_8DoF.osim").getroot()
 
     def loc(joint):
@@ -235,7 +438,15 @@ def main(kul: Path) -> None:
         print(f'    "{name}": [{txt}],  # KUL resting length {rest * 1e3:.1f} mm')
     print("}")
     _ = talus_in_calcn
+    if facets_out is not None:
+        facets(kul, osim, o_cal, facets_out)
 
 
 if __name__ == "__main__":
-    main(Path(sys.argv[1]))
+    args = sys.argv[1:]
+    out = None
+    if "--facets" in args:
+        i = args.index("--facets")
+        out = Path(args[i + 1])
+        del args[i:i + 2]
+    main(Path(args[0]), out)
