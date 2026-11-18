@@ -374,10 +374,14 @@ class ChopartStressRig:
     is off, and each load is applied at a fixed point on the midfoot body. The displacement reported for each
     joint is how far a point at the centre of the joint surface on the midfoot side (the posterior face of the
     cuboid; of the navicular) moves relative to the calcaneus. Baumbach does not define the gap direction, so
-    magnitudes are compared.
+    magnitudes are compared. On a --midfoot contact build the two points are the centres of the modelled joint
+    surfaces instead (midfoot_facets.py: the cuboid's contact points; the navicular facet's centre on the talar
+    head), since the coarse mesh's cuboid face lies 16 mm lateral of the calcaneocuboid facet.
     """
 
-    SCREWED = TendonPullRig.SCREWED + ("subtalar_angle_r",)
+    # all six subtalar degrees of freedom on a 6-DOF subtalar build (research-twin's subtalar.py)
+    SCREWED = TendonPullRig.SCREWED + ("subtalar_angle_r", "subtalar_tx_r", "subtalar_ty_r", "subtalar_tz_r",
+                                       "subtalar_flex_r", "subtalar_twist_r")
     # calcn_r frame (m): joint-surface centres on the midfoot side and load points (r_foot.stl shells)
     CC_POINT = np.array([0.0603, 0.0161, 0.0214])       # posterior face of the cuboid
     TN_POINT = np.array([0.0723, 0.0304, -0.0115])      # posterior face of the navicular
@@ -400,6 +404,11 @@ class ChopartStressRig:
         self.d = mujoco.MjData(self.m)
         self.cal = self.m.body("calcn_r").id
         self.mid = self.m.body("midfoot_r").id
+        if "midtarsal_tx_r" in names:                    # --midfoot contact: measure at the joint surfaces
+            import midfoot as MF
+            import midfoot_facets as FA
+            self.CC_POINT = np.array(FA.CC_CUBOID)[:, :3].mean(0)
+            self.TN_POINT = MF.CONTACT_CENTRE + FA.HEAD_RADIUS * MF._unit(FA.NAVICULAR_DIRECTION)
 
     def _calcn_to_mid(self, p: np.ndarray) -> np.ndarray:
         """A calcn_r-frame point at neutral, in the midfoot_r frame."""
@@ -424,6 +433,10 @@ class ChopartStressRig:
         for name, p in (("CC", self.CC_POINT), ("TN", self.TN_POINT)):
             now = R_cal.T @ (d.xpos[self.mid] + R_mid @ self._calcn_to_mid(p) - d.xpos[self.cal])
             out[name] = float(np.linalg.norm(now - p)) * 1e3
-        for jn in ("midtarsal_oblique_r", "midtarsal_ap_r"):
-            out[jn] = math.degrees(d.qpos[m.joint(jn).qposadr[0]])
+        for jn in ("midtarsal_oblique_r", "midtarsal_ap_r", "midtarsal_third_r"):
+            if mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, jn) >= 0:
+                out[jn] = math.degrees(d.qpos[m.joint(jn).qposadr[0]])
+        if mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, "midtarsal_tx_r") >= 0:      # --midfoot contact
+            out["translation"] = 1e3 * float(np.linalg.norm(
+                [d.qpos[m.joint(f"midtarsal_t{a}_r").qposadr[0]] for a in "xyz"]))
         return out

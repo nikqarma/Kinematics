@@ -808,22 +808,24 @@ def check_baumbach2022(xml: Path) -> None:
     """Benchmark (--midfoot builds): Chopart joint displacement under Baumbach 2022's loads (bench.ChopartStressRig)."""
     from bench import ChopartStressRig
     rig = ChopartStressRig(xml)
+    contact = mujoco.mj_name2id(rig.m, mujoco.mjtObj.mjOBJ_JOINT, "midtarsal_tx_r") >= 0   # --midfoot contact
     print("\n  Baumbach 2022 benchmark (calcaneus pinned; 50 N stamp on the midfoot, 50 N forefoot pull):")
     for load in ("axial", "medial", "lateral"):
         r = rig.displacement(load)
         if r is None:
             check(False, f"Baumbach rig: {load} load is stable")
             continue
-        print(f"  {load:<8} oblique {r['midtarsal_oblique_r']:+5.1f} deg, front-to-back {r['midtarsal_ap_r']:+5.1f} deg")
+        print(f"  {load:<8} oblique {r['midtarsal_oblique_r']:+5.1f} deg, front-to-back {r['midtarsal_ap_r']:+5.1f} deg"
+              + (f", third {r['midtarsal_third_r']:+5.1f} deg, translation {r['translation']:.2f} mm" if contact else ""))
         for joint in ("CC", "TN"):
             mean, sd = BAUMBACH2022[(joint, load)]
             name = "calcaneocuboid" if joint == "CC" else "talonavicular"
             check(abs(r[joint] - mean) <= 2 * sd, f"{name} displacement under {load} load within 2 SD "
                   f"({r[joint]:.2f} vs {mean} +/- {sd} mm)",
-                  known_reason=None if joint == "TN" else
+                  known_reason=None if joint == "TN" or contact else
                   "no calcaneocuboid articular contact: the midfoot turns about the talar head and the cuboid, "
                   "~40 mm lateral, swings freely; 2-7 mm across a x0.25-x4 ligament stiffness sweep, so not a "
-                  "stiffness problem (AT-26)")
+                  "stiffness problem (AT-26; --midfoot contact adds the contact)")
 
 
 def check_moving_axis(m: mujoco.MjModel, d: mujoco.MjData) -> None:

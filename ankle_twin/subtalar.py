@@ -164,13 +164,20 @@ def _cup(prefix: str, centre: np.ndarray, radius: float, dirs, half: float, cona
     return geoms
 
 
-def add_joint(model: ET.Element, femur: ET.Element, mesh_dir: Path) -> dict:
+def add_joint(model: ET.Element, femur: ET.Element, mesh_dir: Path,
+              head: tuple[np.ndarray, float] | None = None, navicular: bool = True) -> dict:
     """Turn the subtalar hinge into a 6-DOF joint with contact. Needs talocrural.add_joint() first
-    (its default classes and option flags are reused). Returns the joint geometry."""
+    (its default classes and option flags are reused). Returns the joint geometry.
+
+    head: (centre in the talus frame, radius) to use instead of this module's sphere fit (the contact
+    midfoot's KU Leuven head, so both cups share one head). navicular=False leaves out the navicular part
+    of the socket (the contact midfoot's cup replaces it)."""
     bodies = {b.get("name"): b for b in femur.iter("body")}
     talus, calcn = bodies["talus_r"], bodies["calcn_r"]
     calc_off = np.array([float(c) for c in calcn.get("pos").split()])      # calcn origin in the talus frame
     g = geometry(mesh_dir)
+    if head is not None:
+        g["head_centre"], g["head_radius"] = np.asarray(head[0], dtype=float), float(head[1])
     a, c_h, r_h, c_p, r_p = g["axis"], g["head_centre"], g["head_radius"], g["posterior_centre"], g["posterior_radius"]
     gap = _p("clearance")
 
@@ -214,7 +221,7 @@ def add_joint(model: ET.Element, femur: ET.Element, mesh_dir: Path) -> dict:
     cone = math.cos(math.radians(_p("socket_calcaneal_cone_deg")))
     is_calcaneal = [-n[1] >= cone - 1e-9 for n in dirs]
     navicular = [e for e, c_ in zip(plates, is_calcaneal) if not c_]
-    k_nav = _p("navicular_stiffness")
+    k_nav = _p("navicular_stiffness") if navicular else 0.0
     # Rigid: every plate stays on the calcaneus, in its original order (free-foot transients are sensitive to it).
     calc += plates if math.isinf(k_nav) else [e for e, c_ in zip(plates, is_calcaneal) if c_]
     for k, e in enumerate(calc):
