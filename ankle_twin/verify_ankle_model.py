@@ -125,6 +125,10 @@ def check_ligaments(m: mujoco.MjModel, d: mujoco.MjData) -> None:
     ligs = [n for n in LIGAMENT_FUNCTION]
     ids = [m.tendon(n).id for n in ligs]          # base spring of each ligament (defines L0)
     all_ids = [i for n in ligs for i in ligament_tendon_ids(m, n)]  # every spring segment
+    # with --midfoot, the midfoot ligaments also load the subtalar joint (dorsal talonavicular)
+    all_ids += [i for i in range(m.ntendon) if m.tendon_stiffness[i] > 0 and i not in all_ids]
+    k_all = m.tendon_stiffness[all_ids]
+    start_all = m.tendon_lengthspring[all_ids, 1]
     L0 = m.tendon_lengthspring[ids, 1]
     spec = {lig.name: lig for lig in LIG.LIGAMENTS}
     ja, js = m.joint("ankle_angle_r").dofadr[0], m.joint("subtalar_angle_r").dofadr[0]
@@ -141,7 +145,7 @@ def check_ligaments(m: mujoco.MjModel, d: mujoco.MjData) -> None:
     # qfrc_passive must equal sum_i J_i^T * (-k_i * max(0, L_i - start_i)) over all segments.
     # The fitted subtalar inversion stiffness (a fixed tendon on the subtalar
     # angle, deadband [-10, 0] rad) is one-sided in the same way, so it is included.
-    spring_ids = all_ids + [i for i in range(m.ntendon) if m.tendon(i).name == "subtalar_inversion_stiffness"]
+    spring_ids = all_ids  # every tendon with stiffness > 0, the inversion spring included (see above)
     worst = 0.0
     for a in np.radians(np.arange(-35, 30, 5)):
         for s in np.radians([-15, 0, 15]):
@@ -708,13 +712,15 @@ def check_astion1997(xml: Path) -> None:
     The tibialis posterior (36 N) with the peroneus brevis (11 N) supinates the foot, and the reverse
     pronates it, with the ankle screwed at neutral. Astion found larger loads gave no more motion, so these
     are end ranges. The model's subtalar range is the rotation of the calcaneus relative to the talus between
-    the two poses. The talonavicular and calcaneocuboid ranges need a midfoot joint (the model's foot is one
-    body from calcaneus to metatarsals) and are not tested.
+    the two poses. The talonavicular and calcaneocuboid ranges need a midfoot joint (build with --midfoot);
+    without one the foot is one body from calcaneus to metatarsals and they are not tested. With it, the
+    talonavicular range is the midfoot body's rotation relative to the talus and the calcaneocuboid range its
+    rotation relative to the calcaneus (the navicular and cuboid are one body, as Wolf 2008 found in walking).
     """
     from bench import TendonPullRig
     rig = TendonPullRig(xml)
     print("\n  Astion 1997 benchmark (ankle screwed, 36 N / 11 N tibialis posterior and peroneus brevis pulls):")
-    poses = {}
+    poses, mids = {}, {}
     for name, (tp, pb) in (("supination", (36.0, 11.0)), ("pronation", (11.0, 36.0))):
         R = rig.pose(tp, pb)
         if R is None:
@@ -722,6 +728,7 @@ def check_astion1997(xml: Path) -> None:
             return
         f = {k: v for k, v in rig.ligament_forces().items() if v > 5}
         poses[name] = (R, f)
+        mids[name] = dict(rig.orient)
     rom, axis = TendonPullRig.rotation(poses["supination"][0], poses["pronation"][0])
     m = rig.m
     j = m.joint("subtalar_angle_r")
@@ -739,8 +746,6 @@ def check_astion1997(xml: Path) -> None:
     mean, sd = ASTION1997["subtalar"]
     print(f"  subtalar range {rom:.1f} deg (Astion {mean} +/- {sd}); rotation axis {off:.0f} deg from the model's "
           f"subtalar axis")
-    print(f"  NOTE  talonavicular ({ASTION1997['talonavicular'][0]} deg) and calcaneocuboid "
-          f"({ASTION1997['calcaneocuboid'][0]} deg) ranges need a midfoot joint; not tested")
     # ligasys-sprain: the fitted subtalar inversion spring (build_ankle_model.SUBTALAR_INVERSION_STIFFNESS) is the
     # disclosed reason this fails here; main and research-twin have no spring and pass.
     has_spring = mujoco.mj_name2id(rig.m, mujoco.mjtObj.mjOBJ_TENDON, "subtalar_inversion_stiffness") >= 0
@@ -751,6 +756,49 @@ def check_astion1997(xml: Path) -> None:
                         "joint's axis; Astion lets the joint move about its own axis, which the spring then blocks. "
                         "Without the spring the hinge gives 17.8 deg (README, 'Subtalar ligaments'; Jira AT-23)")
           if has_spring else None)
+    if "midfoot_tal" not in mids["supination"]:
+        print(f"  NOTE  talonavicular ({ASTION1997['talonavicular'][0]} deg) and calcaneocuboid "
+              f"({ASTION1997['calcaneocuboid'][0]} deg) ranges need a midfoot joint (--midfoot); not tested")
+        return
+    for joint, key in (("talonavicular", "midfoot_tal"), ("calcaneocuboid", "midfoot_cal")):
+        r, _ = TendonPullRig.rotation(mids["supination"][key], mids["pronation"][key])
+        mean, sd = ASTION1997[joint]
+        check(abs(r - mean) <= 2 * sd, f"{joint} range under Astion's tendon pulls within 2 SD ({r:.1f} vs "
+              f"{mean} +/- {sd} deg)")
+    for jn in ("midtarsal_oblique_r", "midtarsal_ap_r"):
+        lo, hi = np.degrees(rig.m.jnt_range[rig.m.joint(jn).id])
+        print(f"  {jn}: supination {mids['supination'][jn]:+.1f}, pronation {mids['pronation'][jn]:+.1f} deg "
+              f"(stops {lo:+.0f} / {hi:+.0f})")
+
+
+# Baumbach 2022, intact feet (n = 16): joint displacement (mm, magnitude) under a 50 N plantarward stamp on
+# the midfoot ("axial") and a 50 N forefoot pull medially or laterally. Calcaneocuboid under lateral stress is
+# from the text (1.83 +/- 0.93); the rest are read from Fig. 4 (mean of the two groups' intact bars, SD from
+# the error bars), so +/- about 0.2 mm.
+BAUMBACH2022 = {("CC", "axial"): (0.15, 0.4), ("CC", "medial"): (0.8, 0.8), ("CC", "lateral"): (1.83, 0.93),
+                ("TN", "axial"): (0.75, 0.5), ("TN", "medial"): (2.35, 1.0), ("TN", "lateral"): (2.9, 1.4)}
+
+
+def check_baumbach2022(xml: Path) -> None:
+    """Benchmark (--midfoot builds): Chopart joint displacement under Baumbach 2022's loads (bench.ChopartStressRig)."""
+    from bench import ChopartStressRig
+    rig = ChopartStressRig(xml)
+    print("\n  Baumbach 2022 benchmark (calcaneus pinned; 50 N stamp on the midfoot, 50 N forefoot pull):")
+    for load in ("axial", "medial", "lateral"):
+        r = rig.displacement(load)
+        if r is None:
+            check(False, f"Baumbach rig: {load} load is stable")
+            continue
+        print(f"  {load:<8} oblique {r['midtarsal_oblique_r']:+5.1f} deg, front-to-back {r['midtarsal_ap_r']:+5.1f} deg")
+        for joint in ("CC", "TN"):
+            mean, sd = BAUMBACH2022[(joint, load)]
+            name = "calcaneocuboid" if joint == "CC" else "talonavicular"
+            check(abs(r[joint] - mean) <= 2 * sd, f"{name} displacement under {load} load within 2 SD "
+                  f"({r[joint]:.2f} vs {mean} +/- {sd} mm)",
+                  known_reason=None if joint == "TN" else
+                  "no calcaneocuboid articular contact: the midfoot turns about the talar head and the cuboid, "
+                  "~40 mm lateral, swings freely; 2-7 mm across a x0.25-x4 ligament stiffness sweep, so not a "
+                  "stiffness problem (AT-26)")
 
 
 def check_moving_axis(m: mujoco.MjModel, d: mujoco.MjData) -> None:
@@ -881,6 +929,8 @@ def main() -> int:
         check_six_dof(ANKLE_XML)
     if has_ligs:
         check_astion1997(ANKLE_XML)
+        if mujoco.mj_name2id(am, mujoco.mjtObj.mjOBJ_BODY, "midfoot_r") >= 0:
+            check_baumbach2022(ANKLE_XML)
 
     if moving:
         check_moving_axis(am, ad)
