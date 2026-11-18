@@ -23,6 +23,9 @@ HELD = ("ankle_angle_r", "subtalar_angle_r")
 TALAR_PLAY = ("talus_tx_r", "talus_ty_r", "talus_tz_r", "talus_tilt_r", "talus_rot_r")
 SUBTALAR_PLAY = ("subtalar_tx_r", "subtalar_ty_r", "subtalar_tz_r", "subtalar_flex_r", "subtalar_twist_r")
 LIGAMENTS = ("ATFL_r", "ATFLi_r", "CFL_r", "PTFL_r", "TNL_r", "TSL_r", "TCL_r", "dATTL_r", "dPTTL_r", "CL_r", "ITCL_r")
+# present only in --midfoot builds (midfoot.py)
+MIDFOOT_LIGAMENTS = ("SCN1_r", "SCN2_r", "SCN3_r", "DCC_r", "BCN_r", "BCC_r", "DTN1_r", "DTN2_r", "SPLd_r", "SPLs_r",
+                     "LPL1_r", "LPL2_r", "LPL3_r", "LPL4_r")
 
 # Points on the calcaneus/foot body (calcn_r frame: x anterior, y superior, z lateral).
 HEEL = np.array([0.0, 0.015, 0.0])        # posterior calcaneus, for drawer tests
@@ -337,7 +340,15 @@ class TendonPullRig:
             mujoco.mj_step(m, d)
             if not np.all(np.isfinite(d.qpos)) or d.time < t0:
                 return None
-        return d.xmat[tal].reshape(3, 3).T @ d.xmat[cal].reshape(3, 3)
+        R_tal = d.xmat[tal].reshape(3, 3)
+        self.orient = {}
+        if mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, "midfoot_r") >= 0:
+            R_mid = d.xmat[m.body("midfoot_r").id].reshape(3, 3)
+            self.orient = {"midfoot_tal": R_tal.T @ R_mid,
+                           "midfoot_cal": d.xmat[cal].reshape(3, 3).T @ R_mid}
+            for jn in ("midtarsal_oblique_r", "midtarsal_ap_r"):
+                self.orient[jn] = math.degrees(d.qpos[m.joint(jn).qposadr[0]])
+        return R_tal.T @ d.xmat[cal].reshape(3, 3)
 
     @staticmethod
     def rotation(Ra: np.ndarray, Rb: np.ndarray) -> tuple[float, np.ndarray]:
@@ -348,4 +359,71 @@ class TendonPullRig:
         return ang, Ra @ (w / (np.linalg.norm(w) + 1e-12))
 
     def ligament_forces(self) -> dict[str, float]:
-        return {n: ligament_force(self.m, self.d, n) for n in LIGAMENTS if ligament_tendon_ids(self.m, n)}
+        return {n: ligament_force(self.m, self.d, n) for n in LIGAMENTS + MIDFOOT_LIGAMENTS
+                if ligament_tendon_ids(self.m, n)}
+
+
+class ChopartStressRig:
+    """Baumbach 2022's rig: calcaneus pinned, the Chopart joint loaded through the forefoot (--midfoot builds).
+
+    Baumbach pinned the calcaneus and loaded the foot three ways, holding each 10 s: a 50 N stamp pressing the
+    midfoot plantarward ("axial"), and a 50 N rope round the forefoot just distal to the metatarsal heads pulled
+    medially or laterally (about 5 N*m). Calcaneocuboid and talonavicular "gaps" were read from optical markers
+    on the bones. Here the ankle (all talar DOFs on a 6-DOF build) and the subtalar joint are screwed, so the
+    talus is held with the calcaneus (in the specimens it was not, which this rig does not reproduce), gravity
+    is off, and each load is applied at a fixed point on the midfoot body. The displacement reported for each
+    joint is how far a point at the centre of the joint surface on the midfoot side (the posterior face of the
+    cuboid; of the navicular) moves relative to the calcaneus. Baumbach does not define the gap direction, so
+    magnitudes are compared.
+    """
+
+    SCREWED = TendonPullRig.SCREWED + ("subtalar_angle_r",)
+    # calcn_r frame (m): joint-surface centres on the midfoot side and load points (r_foot.stl shells)
+    CC_POINT = np.array([0.0603, 0.0161, 0.0214])       # posterior face of the cuboid
+    TN_POINT = np.array([0.0723, 0.0304, -0.0115])      # posterior face of the navicular
+    STAMP = np.array([0.0958, 0.0378, -0.0137])         # dorsum at the metatarsal bases
+    ROPE = np.array([0.166, 0.0027, 0.0117])            # centroid of the five metatarsal heads
+    LOADS = {"axial": (STAMP, np.array([0.0, -50.0, 0.0])),
+             "medial": (ROPE, np.array([0.0, 0.0, -50.0])),
+             "lateral": (ROPE, np.array([0.0, 0.0, 50.0]))}
+
+    def __init__(self, xml: str | Path):
+        spec = mujoco.MjSpec.from_file(str(xml))
+        names = {j.name for j in spec.joints}
+        for j in self.SCREWED:
+            if j in names:
+                eq = spec.add_equality(name=f"screw_{j}", type=mujoco.mjtEq.mjEQ_JOINT,
+                                       objtype=mujoco.mjtObj.mjOBJ_JOINT, name1=j)
+                eq.solref = [0.004, 1.0]
+        self.m = spec.compile()
+        self.m.opt.gravity[:] = 0.0
+        self.d = mujoco.MjData(self.m)
+        self.cal = self.m.body("calcn_r").id
+        self.mid = self.m.body("midfoot_r").id
+
+    def _calcn_to_mid(self, p: np.ndarray) -> np.ndarray:
+        """A calcn_r-frame point at neutral, in the midfoot_r frame."""
+        return p - self.m.body_pos[self.mid]
+
+    def displacement(self, load: str, seconds: float = 2.0) -> dict[str, float] | None:
+        """Settle under one of Baumbach's loads; return {'CC': mm, 'TN': mm, joint angles deg} or None."""
+        m, d = self.m, self.d
+        point, force = self.LOADS[load]
+        mujoco.mj_resetData(m, d)
+        t0 = d.time
+        while d.time - t0 < seconds:
+            d.qfrc_applied[:] = 0.0
+            R_cal = d.xmat[self.cal].reshape(3, 3)
+            p_world = d.xpos[self.mid] + d.xmat[self.mid].reshape(3, 3) @ self._calcn_to_mid(point)
+            mujoco.mj_applyFT(m, d, R_cal @ force, np.zeros(3), p_world, self.mid, d.qfrc_applied)
+            mujoco.mj_step(m, d)
+            if not np.all(np.isfinite(d.qpos)) or d.time < t0:
+                return None
+        R_cal, R_mid = d.xmat[self.cal].reshape(3, 3), d.xmat[self.mid].reshape(3, 3)
+        out = {}
+        for name, p in (("CC", self.CC_POINT), ("TN", self.TN_POINT)):
+            now = R_cal.T @ (d.xpos[self.mid] + R_mid @ self._calcn_to_mid(p) - d.xpos[self.cal])
+            out[name] = float(np.linalg.norm(now - p)) * 1e3
+        for jn in ("midtarsal_oblique_r", "midtarsal_ap_r"):
+            out[jn] = math.degrees(d.qpos[m.joint(jn).qposadr[0]])
+        return out

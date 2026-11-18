@@ -16,6 +16,7 @@ Usage:
     python build_ankle_model.py --free-knee        # knee kept as a passive DOF
     python build_ankle_model.py --no-ligaments     # muscles only, as extracted
     python build_ankle_model.py --six-dof --out model_6dof   # EXPERIMENTAL 6-DOF talocrural joint
+    python build_ankle_model.py --midfoot --out model_midfoot # EXPERIMENTAL midfoot joint (midfoot.py)
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ import numpy as np
 import ankle_axis as AX
 import couplings as CPL
 import ligaments as LIG
+import midfoot as MF
 import subtalar as ST
 import talocrural as TC
 
@@ -132,13 +134,14 @@ def add_ligaments(model: ET.Element, femur: ET.Element, mesh_dir: Path) -> None:
             ET.SubElement(sp, "site", site=f"{lig.name}-P2")
 
 
-def set_slack_lengths(xml_path: Path) -> dict[str, float]:
+def set_slack_lengths(xml_path: Path, ligs: list[LIG.Ligament] | None = None) -> dict[str, float]:
     """Set each slack length L0 to the longest length over the ligament's taut-onset ankle angles,
     then each spring segment's deadband start (L0 * (1 + strain_j)) and stiffness."""
+    ligs = LIG.LIGAMENTS if ligs is None else ligs
     m = mujoco.MjModel.from_xml_path(str(xml_path))
     d = mujoco.MjData(m)
     slack = {}
-    for lig in LIG.LIGAMENTS:
+    for lig in ligs:
         lengths = []
         for angle in lig.taut_ankle_deg:
             CPL.pose(m, d, {lig.taut_joint: math.radians(angle)}, forward=False)
@@ -146,7 +149,7 @@ def set_slack_lengths(xml_path: Path) -> dict[str, float]:
         slack[lig.name] = max(lengths)
 
     springs = {}
-    for lig in LIG.LIGAMENTS:
+    for lig in ligs:
         L0 = slack[lig.name]
         for j, (strain, k) in enumerate(LIG.spring_segments(lig, L0)):
             springs[lig.name if j == 0 else f"{lig.name}__s{j}"] = (L0 * (1 + strain), k)
@@ -196,7 +199,9 @@ def set_ankle_axis(model: ET.Element, femur: ET.Element, kind: str, mesh_dir: Pa
 
 def build(src: Path, out_dir: Path, knee_angle_deg: float | None, ligaments: bool = True,
           six_dof: bool = False, axis: str = "moving", swing_deg: float = AX.SWING_DEG,
-          subtalar: str = "contact", navicular_stiffness: float | None = None) -> Path:
+          subtalar: str = "contact", navicular_stiffness: float | None = None,
+          midfoot: bool = False, midfoot_scale: dict[str, float] | None = None,
+          midfoot_guard: bool = False) -> Path:
     if six_dof and axis == "moving":
         raise ValueError("the 6-DOF contact joint needs a fixed axis (its trochlea is a cylinder about it): "
                          "use axis='inman' or 'original'")
@@ -309,6 +314,14 @@ def build(src: Path, out_dir: Path, knee_angle_deg: float | None, ligaments: boo
             if navicular_stiffness is not None:      # N/mm on the command line
                 ST.PARAMS["navicular_stiffness"] = (navicular_stiffness * 1e3,) + ST.PARAMS["navicular_stiffness"][1:]
             ST.add_joint(model, femur, mesh_dir)
+    midfoot_ligs = []
+    if midfoot:
+        if six_dof and subtalar == "contact":
+            raise ValueError("the midfoot joint is not yet combined with the contact subtalar joint: "
+                             "its navicular plates would need to move to the midfoot body")
+        if not ligaments:
+            raise ValueError("the midfoot joint needs the ligaments: without them nothing holds it")
+        midfoot_ligs = MF.add_joint(model, femur, mesh_dir, midfoot_scale, midfoot_guard)
 
     ET.indent(model, space="  ")
     knee = "free" if knee_angle_deg is None else f"locked at {knee_angle_deg:g} deg"
@@ -318,13 +331,15 @@ def build(src: Path, out_dir: Path, knee_angle_deg: float | None, ligaments: boo
         f" Talocrural joint: {'6-DOF with contact' if six_dof else '1-DOF hinge'}, {axis} axis"
         + (f" ({swing_deg:g} deg swing)" if axis == "moving" else "") + "."
         + (f" Subtalar joint: {'6-DOF with contact, anatomical axis' if subtalar == 'contact' else '1-DOF hinge'}."
-           if six_dof else "") +
-        " Do not edit by hand; edit the generator and rebuild. -->\n"
+           if six_dof else "")
+        + (" Midfoot joint: yes (midfoot.py" + (", guard ranges" if midfoot_guard else "")
+           + (f", stiffness scale {midfoot_scale}" if midfoot_scale else "") + ")." if midfoot else "")
+        + " Do not edit by hand; edit the generator and rebuild. -->\n"
     )
     out = out_dir / "ankle_foot_r.xml"
     out.write_text(header + ET.tostring(model, encoding="unicode") + "\n", encoding="utf-8")
     if ligaments:
-        for name, L0 in set_slack_lengths(out).items():
+        for name, L0 in set_slack_lengths(out, LIG.LIGAMENTS + midfoot_ligs).items():
             print(f"  {name:8s} slack length {L0 * 1000:5.1f} mm")
     return out
 
@@ -355,7 +370,28 @@ def main() -> None:
     p.add_argument("--subtalar", choices=("hinge", "contact"), default="contact",
                    help="with --six-dof: 'contact' = 6-DOF subtalar joint with articular contact about an "
                         "anatomical axis (see subtalar.py); 'hinge' = MS-Human-700's 1-DOF hinge")
+    p.add_argument("--midfoot", action="store_true",
+                   help="EXPERIMENTAL: split the foot at the Chopart joint into calcaneus and midfoot "
+                        "with a 2-DOF midtarsal joint and its ligaments (see midfoot.py)")
+    p.add_argument("--midfoot-scale", action="append", default=[], metavar="GROUP=FACTOR",
+                   help=f"scale one midfoot ligament group's stiffness (groups: {', '.join(MF.GROUPS)}); "
+                        "for sensitivity studies; repeatable")
+    p.add_argument("--midfoot-guard", action="store_true",
+                   help=f"midfoot joint ranges +-{MF.GUARD_DEG:g} deg instead of Hicks 1953's")
     args = p.parse_args()
+    scale = {}
+    for item in args.midfoot_scale:
+        g, _, f = item.partition("=")
+        if g not in MF.GROUPS or not f:
+            p.error(f"--midfoot-scale: expected GROUP=FACTOR with GROUP in {MF.GROUPS}")
+        scale[g] = float(f)
+    if (scale or args.midfoot_guard) and not args.midfoot:
+        p.error("--midfoot-scale and --midfoot-guard need --midfoot")
+    if args.midfoot and args.six_dof and args.subtalar == "contact":
+        p.error("--midfoot is not yet combined with the contact subtalar joint (its navicular plates are on "
+                "the calcaneus): use --subtalar hinge with --six-dof")
+    if args.midfoot and args.no_ligaments:
+        p.error("--midfoot needs the ligaments")
     if args.six_dof and args.no_ligaments:
         p.error("--six-dof needs the ligaments: without them nothing holds the talus in the mortise")
     axis = args.axis or ("inman" if args.six_dof else "moving")
@@ -363,7 +399,8 @@ def main() -> None:
         p.error("--six-dof needs a fixed axis (its trochlea is a cylinder about it): use --axis inman or original")
     out = build(args.src, args.out, None if args.free_knee else args.knee_angle,
                 ligaments=not args.no_ligaments, six_dof=args.six_dof, axis=axis, swing_deg=args.swing_deg,
-                subtalar=args.subtalar, navicular_stiffness=args.navicular_stiffness)
+                subtalar=args.subtalar, navicular_stiffness=args.navicular_stiffness,
+                midfoot=args.midfoot, midfoot_scale=scale or None, midfoot_guard=args.midfoot_guard)
     print(f"wrote {out}")
 
 
