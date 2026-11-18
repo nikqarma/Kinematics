@@ -297,6 +297,10 @@ class ChopartStressRig:
         for name, p in (("CC", self.CC_POINT), ("TN", self.TN_POINT)):
             now = R_cal.T @ (d.xpos[self.mid] + R_mid @ self._calcn_to_mid(p) - d.xpos[self.cal])
             out[name] = float(np.linalg.norm(now - p)) * 1e3
-        for jn in ("midtarsal_oblique_r", "midtarsal_ap_r"):
-            out[jn] = math.degrees(d.qpos[m.joint(jn).qposadr[0]])
+        for jn in ("midtarsal_oblique_r", "midtarsal_ap_r", "midtarsal_third_r"):
+            if mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, jn) >= 0:
+                out[jn] = math.degrees(d.qpos[m.joint(jn).qposadr[0]])
+        if mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, "midtarsal_tx_r") >= 0:      # --midfoot contact
+            out["translation"] = 1e3 * float(np.linalg.norm(
+                [d.qpos[m.joint(f"midtarsal_t{a}_r").qposadr[0]] for a in "xyz"]))
         return out

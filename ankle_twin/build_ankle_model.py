@@ -198,7 +198,7 @@ def set_ankle_axis(model: ET.Element, femur: ET.Element, kind: str, mesh_dir: Pa
 
 def build(src: Path, out_dir: Path, knee_angle_deg: float | None, ligaments: bool = True,
           six_dof: bool = False, axis: str = "moving", swing_deg: float = AX.SWING_DEG,
-          midfoot: bool = False, midfoot_scale: dict[str, float] | None = None,
+          midfoot: bool | str = False, midfoot_scale: dict[str, float] | None = None,
           midfoot_guard: bool = False) -> Path:
     if six_dof and axis == "moving":
         raise ValueError("the 6-DOF contact joint needs a fixed axis (its trochlea is a cylinder about it): "
@@ -312,7 +312,8 @@ def build(src: Path, out_dir: Path, knee_angle_deg: float | None, ligaments: boo
     if midfoot:
         if not ligaments:
             raise ValueError("the midfoot joint needs the ligaments: without them nothing holds it")
-        midfoot_ligs = MF.add_joint(model, femur, mesh_dir, midfoot_scale, midfoot_guard)
+        mode = "hinge" if midfoot is True else midfoot
+        midfoot_ligs = MF.add_joint(model, femur, mesh_dir, midfoot_scale, midfoot_guard, mode)
 
     ET.indent(model, space="  ")
     knee = "free" if knee_angle_deg is None else f"locked at {knee_angle_deg:g} deg"
@@ -321,7 +322,7 @@ def build(src: Path, out_dir: Path, knee_angle_deg: float | None, ligaments: boo
         f"     Knee: {knee}. Ligaments: {'yes' if ligaments else 'no'}."
         f" Talocrural joint: {'6-DOF with contact' if six_dof else '1-DOF hinge'}, {axis} axis"
         + (f" ({swing_deg:g} deg swing)" if axis == "moving" else "") + "."
-        + (" Midfoot joint: yes (midfoot.py" + (", guard ranges" if midfoot_guard else "")
+        + (f" Midfoot joint: {'hinge' if midfoot is True else midfoot} (midfoot.py" + (", guard ranges" if midfoot_guard else "")
            + (f", stiffness scale {midfoot_scale}" if midfoot_scale else "") + ")." if midfoot else "")
         + " Do not edit by hand; edit the generator and rebuild. -->\n"
     )
@@ -351,9 +352,10 @@ def main() -> None:
     p.add_argument("--swing-deg", type=float, default=AX.SWING_DEG,
                    help=f"moving axis: total change in coronal inclination across the flexion range "
                         f"(default {AX.SWING_DEG:g}, illustrative - see ankle_axis.py)")
-    p.add_argument("--midfoot", action="store_true",
-                   help="EXPERIMENTAL: split the foot at the Chopart joint into calcaneus and midfoot "
-                        "with a 2-DOF midtarsal joint and its ligaments (see midfoot.py)")
+    p.add_argument("--midfoot", nargs="?", const="hinge", default=None, choices=MF.MODES,
+                   help="EXPERIMENTAL: split the foot at the Chopart joint into calcaneus and midfoot with "
+                        "its ligaments (see midfoot.py). 'hinge' (default): two hinges with Hicks's stops; "
+                        "'contact': six degrees of freedom held by talonavicular and calcaneocuboid contact")
     p.add_argument("--midfoot-scale", action="append", default=[], metavar="GROUP=FACTOR",
                    help=f"scale one midfoot ligament group's stiffness (groups: {', '.join(MF.GROUPS)}); "
                         "for sensitivity studies; repeatable")
@@ -368,6 +370,8 @@ def main() -> None:
         scale[g] = float(f)
     if (scale or args.midfoot_guard) and not args.midfoot:
         p.error("--midfoot-scale and --midfoot-guard need --midfoot")
+    if args.midfoot_guard and args.midfoot == "contact":
+        p.error("--midfoot-guard is for the hinge midfoot (contact mode has no working stops)")
     if args.midfoot and args.no_ligaments:
         p.error("--midfoot needs the ligaments")
     if args.six_dof and args.no_ligaments:
@@ -377,7 +381,7 @@ def main() -> None:
         p.error("--six-dof needs a fixed axis (its trochlea is a cylinder about it): use --axis inman or original")
     out = build(args.src, args.out, None if args.free_knee else args.knee_angle,
                 ligaments=not args.no_ligaments, six_dof=args.six_dof, axis=axis, swing_deg=args.swing_deg,
-                midfoot=args.midfoot, midfoot_scale=scale or None, midfoot_guard=args.midfoot_guard)
+                midfoot=args.midfoot or False, midfoot_scale=scale or None, midfoot_guard=args.midfoot_guard)
     print(f"wrote {out}")
 
 
