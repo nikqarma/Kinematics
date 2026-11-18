@@ -281,6 +281,51 @@ The `original` axis's earlier failures at 20° DF (the talus sat 3–8 mm anteri
 
 Each feature alone fell short: the pivot at mid-height locked the joint; pivot alone near the top kept the ATFL from controlling rotation (5.5 → 6.5°); fibula and taper without the pivot tipped the loaded intact talus to 25°. All three together give unloaded laxity and loaded stability. Setting `medial_pivot_radius = 0`, `trochlear_width_difference = 0` and `fibula_mobile = False` recovers the idealised mortise.
 
+## Experimental: midfoot joint (`--midfoot`)
+
+```
+.venv\Scripts\python build_ankle_model.py --midfoot --out model_midfoot
+.venv\Scripts\python build_ankle_model.py --midfoot --midfoot-scale dorsal=0.5 --out model_midfoot_soft   # sensitivity
+.venv\Scripts\python build_ankle_model.py --midfoot --midfoot-guard --out model_midfoot_guard           # stops at +-30 deg
+```
+
+[midfoot.py](midfoot.py) splits MS-Human-700's one-piece foot at the Chopart joint into the calcaneus (`calcn_r`) and one midfoot body (`midfoot_r`: navicular, cuboid, cuneiforms and metatarsals, with the toes hanging from it). The split is exact, because `r_foot.stl` is made of separate bone shells. Muscle sites beyond the joint line move with it (tibialis posterior, peroneus brevis and longus, tibialis anterior, the toe extensors and flexors' distal points), as does the tibionavicular insertion. Off by default; Jira AT-13.
+
+- **Joint:** two hinges in series through the centre of the talar head: Hicks 1953's oblique axis (46.5° elevation, 29.6° medial) and front-to-back axis (11.1°, 25.6°). Hicks's surface landmarks were located on the KU Leuven model's CT bones, then rotated into this model by registering those bones onto these (`tools/kul_midfoot_register.py`). Stops at Hicks's ranges (22° and 8° in total), split evenly about neutral (assumed).
+- **Ligaments** (paths from the KU Leuven model, slack at midtarsal neutral, assumed):
+
+| Ligament | Stiffness (N/mm) | Basis |
+|---|---|---|
+| Spring complex (3 bundles) | 45 | measured (Davis 1996) |
+| Dorsal calcaneocuboid | 134 | measured (Hofstede 1999), scaled from the 7 mm strip to the full 17 mm width |
+| Bifurcate, calcaneonavicular limb | 36 | estimated: 6.0 mm wide, 21.8 mm long |
+| Bifurcate, calcaneocuboid limb | 72 | estimated: 5.9 × 10.7 mm |
+| Dorsal talonavicular (2 bands) | 142 | estimated: no published width found, so Hofstede's mean dorsal width 12.7 mm × 11.6 mm |
+| Short plantar (deep + superficial) | 46 + 64 | estimated: 6.3 × 17.7 and 11.6 × 23.7 mm (Edama 2021) |
+| Long plantar (4 bands) | 42 | estimated: 14.2 × 44.3 mm (Edama 2021) |
+
+Estimated stiffness is k = C × width ÷ length with C = 130 N/mm: the mean stiffness × fibre span of Hofstede 1999's nine dorsal tarsal ligaments and the anterior tibiofibular ligament, all tested the same way as 7 mm strips, divided by 7 mm (spread 31%). In Hofstede's own data length did not reduce the spread (stiffness alone: 25%), so the 1/length term is physics, not fitted. These are model inputs: nothing is tuned to a benchmark. `--midfoot-scale dorsal=F` / `plantar=F` / `measured=F` scales a group.
+
+**Results** (`main` hinge build, moving axis):
+
+| Benchmark | Without `--midfoot` | `--midfoot` | Literature |
+|---|---|---|---|
+| Astion: subtalar range | 17.8° | 5.7° | 20.4 ± 8° |
+| Astion: talonavicular range | - | 12.7° | 36.7 ± 13° |
+| Astion: calcaneocuboid range | - | 7.1° | 14.4 ± 6° |
+| Baumbach: talonavicular displacement, axial / medial / lateral | - | 0.7 / 2.3 / 2.8 mm | 0.75 / 2.35 / 2.9 mm |
+| Baumbach: calcaneocuboid displacement, axial / medial / lateral | - | **2.3 / 4.7 / 5.1 mm** | 0.15 / 0.8 / 1.8 mm |
+
+All pass except Baumbach's calcaneocuboid displacements, which the verifier reports as KNOWN on midfoot builds (no calcaneocuboid contact; see below). The five standard builds are unaffected.
+
+**Sensitivity (2026-11-18).** Each estimated group scaled ×0.25 to ×4 (both together too), with Hicks's stops and with ±30° guards:
+- **Plantar ligaments: no effect on any Astion range,** and calcaneocuboid displacement under the lateral load only moves 7.1 → 4.0 mm across a 16-fold range. Measured plantar stiffness (Huang 1993 and the like) would not change these results.
+- **Dorsal ligaments matter, through the dorsal talonavicular.** It runs from the talus to the midfoot, so it also crosses the subtalar joint, and with zero slack it pulls the subtalar range down: 13.9° (×0.25) to 4.3° (×4); talonavicular 21.7° to 10.3°. Its width is not published and its slack length is assumed, and these two drive the result.
+- **The calcaneocuboid failure is structural, not a stiffness problem.** It stays at 2–7 mm across the whole sweep. Rotating about the talar head swings the cuboid, 40 mm lateral, through the full rotation; in the foot the calcaneocuboid joint's saddle (Baumbach: "bony anatomy") blocks this. The model has no calcaneocuboid contact.
+- **The front-to-back hinge is held only by its stops.** It sits on its +4° stop in every Astion pose and most Baumbach loads; with ±30° guards it turns 19–24°. No modelled ligament has much lever about it.
+
+Next steps: a calcaneocuboid articular contact (Jira AT-26), and the dorsal talonavicular's width and zero-strain length (AT-27).
+
 ## Known limitations: read before using ligament forces
 
 1. **Ligament strains at end range are still too high** (default moving axis).
@@ -348,7 +393,17 @@ The experimental 6-DOF joint (above) addresses limitation 4. It does **not** fix
 - Lundberg A. et al. (1989) *J Bone Joint Surg Br* 71(1):94–99: axes lie close to the midpoint of the line between the malleolar tips, change through the range of motion, are oblique downward and laterally in dorsiflexion, and differ between individuals (abstract).
 - Wolf P. et al. (2022) *Sci Rep* 12:13957: bone-pin walking data; the dorsiflexion/plantarflexion inclination difference runs opposite to Lundberg in 4 of 5 participants; source of the illustrative 14.4° swing (Fig. 5, morphology-based axes for one participant).
 - Klein P., Mattys S., Rooze M. (1996) *J Biomech* 29:21–30: in vitro ankle and subtalar muscle moment arms (via Brookbush Institute review).
+- Hicks J.H. (1953) The mechanics of the foot. I. The joints. *J Anat* 87:345–357: midtarsal axes as surface landmarks and their ranges (full text).
+- Malaquias T.M. et al. (2016) Extended foot-ankle musculoskeletal models for application in movement analysis. *Comput Methods Biomech Biomed Engin*: KU Leuven foot model; its CT bones and ligament paths (SimTK kul_footmodel, CC BY 3.0) are used by `--midfoot`.
+- Wolf P. et al. (2008) *Gait Posture* 28:434–441: navicular and cuboid move as one unit in walking (bone pins).
+- Davis W.H. et al. (1996) *Foot Ankle Int* 17(2):95–102: spring ligament complex stiffness 45.1 ± 19.1 N/mm, length and area (full text).
+- Hofstede D.J., Ritt M.J.P.F., Bos K.E. (1999) *J Hand Surg Am* 24A(5):968–976: stiffness of nine dorsal tarsal ligaments on 7 mm strips, with their spans and widths (full text).
+- Kafka R.M. et al. (2019) *Cureus* 11:e3847 and Edama M. et al. (2018/2019) *Surg Radiol Anat* 41:3–7: bifurcate ligament lengths, widths and thicknesses (Edama via Kafka).
+- Edama M. et al. (2021) *J Foot Ankle Res* 14:3: long and short plantar ligament lengths, widths and thicknesses (open access).
+- Baumbach S.F. et al. (2022) *Foot Ankle Surg* 28(8):1300–1306: calcaneocuboid and talonavicular displacement under 50 N loads, calcaneus pinned (full text; most values read from Fig. 4).
 
 ## Licence
 
 Model data derived from MS-Human-700 (© LNS Group, Apache-2.0). Cite Zuo et al., ICRA 2024 (see `../MS-Human-700/README.md`).
+
+The `--midfoot` build's axis directions and ligament paths are derived from the KU Leuven foot model (Malaquias T., Silveira C., Aerts W., De Groote F., Dereymaeker G., Vander Sloten J., Jonkers I. (2016) Extended foot-ankle musculoskeletal models for application in movement analysis. *Comput Methods Biomech Biomed Engin*; SimTK project kul_footmodel), licensed CC BY 3.0. The KU Leuven files themselves are not included.
