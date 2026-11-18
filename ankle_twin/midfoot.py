@@ -85,7 +85,7 @@ CC_PAIR_REACH = 0.008            # m; each cuboid sphere is paired with every ca
 SLIDE_RANGE = 0.005              # m; safety limit only (the contacts hold the joint well inside it)
 PLAY_DAMPING = 200.0             # N*s/m on the slides; as talocrural.TALAR_DAMPING (numerical/capsular)
 SPRING_LIGAMENTS = ("SCN1_r", "SCN2_r", "SCN3_r")
-CONTACT_TIMESTEP = 0.0005        # s; numerical (see add_joint)
+CONTACT_TIMESTEP = 0.00025       # s; numerical (see add_joint)
 
 # ---- ligament stiffness ------------------------------------------------------------------------------
 # Hofstede 1999 Table 1 / 3: (shortest span, longest span, width) mm and stiffness N/mm per 7 mm strip,
@@ -302,6 +302,11 @@ def _add_contact(model: ET.Element, bodies: dict, mf: ET.Element, C: np.ndarray)
     contact = model.find("contact")
     if contact is None:
         contact = ET.SubElement(model, "contact")
+    # Skin capsules on neighbouring foot bodies overlap at neutral; with MuJoCo's parent filter off (6-DOF
+    # builds) or across the new body chain they would push the free midfoot. Excludes only affect
+    # automatic contacts, not the explicit pairs below.
+    for b1, b2 in (("calcn_r", "midfoot_r"), ("midfoot_r", "toes_r"), ("calcn_r", "toes_r"), ("talus_r", "midfoot_r")):
+        ET.SubElement(contact, "exclude", body1=b1, body2=b2)
     for name in cup:
         ET.SubElement(contact, "pair", geom1="talar_head_tn_r", geom2=name, **CONTACT)
     for i, sname in enumerate(spheres):
@@ -370,8 +375,10 @@ def add_joint(model: ET.Element, femur: ET.Element, mesh_dir: Path, scale: dict[
             ET.SubElement(mf, "joint", name=jname, **{"class": "ankle"}, pos="0 0 0", axis=_fmt(ax),
                           range=f"{-r:.6g} {r:.6g}")
     else:
-        # A 0.3 kg midfoot on ~580 N/mm of ligaments: explicit integration needs a short step (unstable at
-        # 2 ms, drifts to its slide limits at 1 ms; 0.5 and 0.25 ms agree to 0.01 mm under gravity).
+        # A 0.3 kg midfoot on ~580 N/mm of ligaments: explicit integration needs a short step. Hinge
+        # subtalar: unstable at 2 ms, drifts to its slide limits at 1 ms, 0.5 and 0.25 ms agree. With
+        # research-twin's 6-DOF subtalar (talus, calcaneus and midfoot all floating): unstable at 0.5 ms,
+        # 0.25 and 0.125 ms agree to 0.01 mm under gravity.
         option = model.find("option")
         if option is None:
             option = ET.Element("option")
