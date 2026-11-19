@@ -61,6 +61,13 @@ REFS = {
                    "talocalcaneal interosseous ligament function studied in cadaver specimens. Acta Orthop Scand "
                    "68(5):442-446 (n=6, tibia and talus fixed, ~0.2 N*m circumferential load on the calcaneus, "
                    "no axial load; full text)",
+    "Edama2019": "Edama M. et al. (2019) Morphological characteristics of the lateral talocalcaneal ligament: a "
+                 "large-scale anatomical study. Surg Radiol Anat 41:25-28 (100 legs: LTCL present in 42%, "
+                 "25.4 x 4.0 x 1.5 mm; CFL 30.8 x 4.6 x 1.8 mm)",
+    "Cankaya2021": "Cankaya B., Ogul H. (2021) MR arthrographic anatomy of the posterior talocalcaneal ligament. "
+                   "Skeletal Radiol 50:705-710 (197 ankles: present in 65.5%, 15.9 mm long, 1.1 mm thick, no width)",
+    "Pastore2009": "Pastore D. et al. (2009) Ligaments of the posterior and lateral talar processes. AJR "
+                   "192:967-973 (attachments of the lateral, posterior and medial talocalcaneal ligaments)",
     "Poonja2017": "Poonja A.J. et al. (2017) Anatomical study of the cervical and interosseous talocalcaneal "
                   "ligaments of the foot with surgical relevance. Cureus 9(6):e1382 (n=26, formalin-fixed; "
                   "full text)",
@@ -306,6 +313,101 @@ def campbell_direction(ant_deg: float, inf_deg: float, lat_deg: float) -> tuple[
                   math.sin(math.radians(lat_deg))])
     n = float(np.linalg.norm(v))
     return v / n, n
+
+
+# ---- Talocalcaneal ligaments (research-twin, Jira AT-17) -------------------
+# Lateral (LTCL), posterior (PTCL) and medial (MTCL) talocalcaneal ligaments: short bands across the subtalar
+# joint margins. Built only when the builder asks for them (build_ankle_model.py --talocalcaneal). Without
+# them, cutting the CFL, CL and ITCL lets the 6-DOF subtalar joint dislocate.
+# No stiffness has been measured for any of them. Each is scaled from this model's CFL (Rochelle2020,
+# 45.8 N/mm), with Edama2019's CFL dimensions, as a band of the same tissue: k = k_CFL * (w t / w_CFL t_CFL)
+# * (L_CFL / L). Failure load scales with the cross-section.
+CFL_DIMS_MM = (30.8, 4.6, 1.8)        # Edama2019: CFL length, width, thickness (100 legs)
+TALOCALCANEAL = ("LTCL_r", "PTCL_r", "MTCL_r")
+
+
+def _scaled_from_cfl(length_mm: float, width_mm: float, thick_mm: float) -> tuple[float, float]:
+    """(stiffness N/m, failure load N) of a band scaled from this model's CFL."""
+    cfl = next(L for L in LIGAMENTS if L.name == "CFL_r")
+    L0, w0, t0 = CFL_DIMS_MM
+    area = (width_mm * thick_mm) / (w0 * t0)
+    return cfl.curve[1] * area * (L0 / length_mm), cfl.failure_load * area
+
+
+def talocalcaneal(mesh_dir: Path, include=("LTCL_r",), ptcl_width_mm: float | None = None,
+                  mtcl_width_mm: float | None = None, onset_deg: float = 0.0) -> tuple[list[Ligament], dict]:
+    """The requested talocalcaneal ligaments and their attachments ({name: (talus point, calcn point)}).
+
+    LTCL: Edama2019 dimensions, all sourced. PTCL: Cankaya2021 length and thickness; its width is not
+    published and must be given (ptcl_width_mm, an assumption). MTCL: no dimensions published; width given
+    (mtcl_width_mm), thickness taken as the CFL's, length from this model's attachments (assumptions).
+    onset_deg: each is slack within +-onset_deg of subtalar rotation (no zero-strain data exist for any of them;
+    0 = taut from neutral). Taut from neutral, the LTCL alone holds Pellegrini's rig at ~5 deg whatever else is
+    cut, which his 13-19 deg after cutting CFL + CL + ITCL rules out."""
+    import midfoot as MF                                # the calcaneus shell of r_foot.stl
+    tal = load_stl(mesh_dir / "r_talus.stl")           # talus_r frame: x anterior, y superior, z lateral
+    cal = np.unique(MF.split_foot(MF._read_stl(mesh_dir / "r_foot.stl"))[0].reshape(-1, 3), axis=0)
+    cit = BODY_ORIGIN_IN_TIBIA["calcn_r"] - BODY_ORIGIN_IN_TIBIA["talus_r"]
+    ct = cal + cit                                      # calcaneus in the talus frame at neutral
+    cfl_ins = attachments(mesh_dir)["CFL_r"][1] + cit
+    x, y, z = 0, 1, 2
+
+    def closest_length(p, mask, length):
+        return _pick(ct, mask, -np.abs(np.linalg.norm(ct - p, axis=1) - length))
+
+    pts, ligs = {}, []
+    # LTCL (Pastore2009): anteroinferior lateral talar process, with the ATFL (Edama2019: always joined to it),
+    # down and back to the calcaneus just lateral of the posterior facet, anterior and medial of the CFL.
+    o = _pick(tal, tal[:, y] < -0.002, tal[:, z] + 0.3 * tal[:, x])
+    m = ((ct[:, x] < o[x]) & (ct[:, x] > cfl_ins[x]) & (ct[:, y] < o[y] - 0.005) & (ct[:, z] > o[z] - 0.010)
+         & (ct[:, z] < cfl_ins[z] + 0.003))
+    pts["LTCL_r"] = (o, closest_length(o, m, 0.0254) - cit)
+    # PTCL (Pastore2009): lateral surface and apex of the posterolateral tubercle to the superior, medial
+    # calcaneus. (Cankaya2021 places it mid-central; this coarse calcaneus has no vertex there within 28 mm.)
+    o = _pick(tal, (tal[:, z] > 0.002) & (tal[:, y] < 0.0), -tal[:, x])
+    m = ((ct[:, y] < o[y] - 0.003) & (np.abs(ct[:, x] - o[x]) < 0.012) & (ct[:, z] < o[z] + 0.004)
+         & (ct[:, z] > o[z] - 0.015))
+    pts["PTCL_r"] = (o, closest_length(o, m, 0.0159) - cit)
+    # MTCL (Pastore2009): posteromedial tubercle, forward and down to the posterior border of the sustentaculum.
+    o = _pick(tal, (tal[:, z] < -0.004) & (tal[:, y] < 0.0) & (tal[:, x] < tal[:, x].min() + 0.006), -tal[:, z] - tal[:, y])
+    m = (ct[:, z] < o[z] - 0.002) & (ct[:, x] > o[x]) & (ct[:, x] < o[x] + 0.030) & (ct[:, y] < o[y])
+    cand = ct[m]
+    pts["MTCL_r"] = (o, cand[np.argmin(cand[:, z] + 0.3 * np.linalg.norm(cand - o, axis=1))] - cit)
+
+    def length(n):
+        return float(np.linalg.norm(pts[n][1] + cit - pts[n][0])) * 1e3
+
+    common = dict(taut_ankle_deg=(onset_deg, -onset_deg) if onset_deg else (0.0,),
+                  taut_source=(f"ASSUMED: slack within +-{onset_deg:g} deg of subtalar rotation" if onset_deg else
+                               "ASSUMED: taut from subtalar neutral") + " (no zero-strain data)",
+                  taut_joint="subtalar_angle_r")
+    if "LTCL_r" in include:
+        k, f = _scaled_from_cfl(25.4, 4.0, 1.5)
+        ligs.append(Ligament("LTCL_r", "lateral talocalcaneal", "talus_r", "calcn_r", ("linear", k),
+                             f"estimated: CFL scaled by Edama2019 dimensions (25.4 x 4.0 x 1.5 mm): {k / 1e3:.1f} N/mm",
+                             failure_load=f, reference_length=0.0254, reference_source="Edama2019",
+                             notes=f"present in 42% of feet (Edama2019); model length {length('LTCL_r'):.1f} mm",
+                             **common))
+    if "PTCL_r" in include:
+        if ptcl_width_mm is None:
+            raise ValueError("PTCL: no published width; give ptcl_width_mm (an assumption)")
+        k, f = _scaled_from_cfl(15.9, ptcl_width_mm, 1.1)
+        ligs.append(Ligament("PTCL_r", "posterior talocalcaneal", "talus_r", "calcn_r", ("linear", k),
+                             f"estimated: CFL scaled by Cankaya2021 length 15.9 mm and thickness 1.1 mm and an ASSUMED "
+                             f"width {ptcl_width_mm:g} mm: {k / 1e3:.1f} N/mm", failure_load=f,
+                             reference_length=0.0159, reference_source="Cankaya2021",
+                             notes=f"present in 65.5% (Cankaya2021); model length {length('PTCL_r'):.1f} mm", **common))
+    if "MTCL_r" in include:
+        if mtcl_width_mm is None:
+            raise ValueError("MTCL: no published dimensions; give mtcl_width_mm (an assumption)")
+        L = length("MTCL_r")
+        k, f = _scaled_from_cfl(L, mtcl_width_mm, CFL_DIMS_MM[2])
+        ligs.append(Ligament("MTCL_r", "medial talocalcaneal", "talus_r", "calcn_r", ("linear", k),
+                             f"estimated: CFL scaled by an ASSUMED width {mtcl_width_mm:g} mm, the CFL's thickness and "
+                             f"the model length {L:.1f} mm: {k / 1e3:.1f} N/mm", failure_load=f,
+                             reference_length=L / 1e3, reference_source="Pastore2009",
+                             notes="present in 100% (Pastore2009, 10 ankles); 'short, strong'", **common))
+    return ligs, {n: pts[n] for n in (lig.name for lig in ligs)}
 
 
 def attachments(mesh_dir: Path) -> dict[str, tuple[np.ndarray, np.ndarray]]:

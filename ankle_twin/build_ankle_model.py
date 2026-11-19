@@ -83,7 +83,8 @@ def _fmt(v) -> str:
     return " ".join(f"{c:.6g}" for c in v)
 
 
-def add_ligaments(model: ET.Element, femur: ET.Element, mesh_dir: Path) -> None:
+def add_ligaments(model: ET.Element, femur: ET.Element, mesh_dir: Path,
+                  extra: tuple[list, dict] | None = None) -> None:
     """Add attachment sites and tension-only ligament tendons (slack lengths and stiffness set later)."""
     bodies = {b.get("name"): b for b in femur.iter("body")}
     # The attachment code places some insertions via the tibia frame; make sure
@@ -93,6 +94,10 @@ def add_ligaments(model: ET.Element, femur: ET.Element, mesh_dir: Path) -> None:
     assert np.allclose(LIG.BODY_ORIGIN_IN_TIBIA["talus_r"], talus_pos, atol=1e-6), "talus offset changed"
     assert np.allclose(LIG.BODY_ORIGIN_IN_TIBIA["calcn_r"], talus_pos + calcn_pos, atol=1e-6), "calcn offset changed"
     pts = LIG.attachments(mesh_dir)
+    extra_ligs = []
+    if extra:
+        extra_ligs, extra_pts = extra
+        pts.update(extra_pts)
 
     default = model.find("default")
     lig_default = ET.SubElement(default, "default", {"class": "ligament"})
@@ -108,7 +113,7 @@ def add_ligaments(model: ET.Element, femur: ET.Element, mesh_dir: Path) -> None:
         " Ankle ligaments: tension-only springs (springlength deadband). Exponential force-strain "
         "curves are stacks of parallel springs (<name>__sN) with staggered deadbands. "
         "Parameters and sources in ligaments.py "))
-    for lig in LIG.LIGAMENTS:
+    for lig in LIG.LIGAMENTS + extra_ligs:
         p1, p2 = pts[lig.name]
         for body, p, tag in ((lig.body1, p1, "P1"), (lig.body2, p2, "P2")):
             # Insert before child bodies so the site belongs to this body's own block.
@@ -201,7 +206,8 @@ def build(src: Path, out_dir: Path, knee_angle_deg: float | None, ligaments: boo
           six_dof: bool = False, axis: str = "moving", swing_deg: float = AX.SWING_DEG,
           subtalar: str = "contact", navicular_stiffness: float | None = None,
           midfoot: bool = False, midfoot_scale: dict[str, float] | None = None,
-          midfoot_guard: bool = False) -> Path:
+          midfoot_guard: bool = False, talocalcaneal: tuple[str, ...] = (),
+          ptcl_width: float | None = None, mtcl_width: float | None = None, tc_onset: float = 0.0) -> Path:
     if six_dof and axis == "moving":
         raise ValueError("the 6-DOF contact joint needs a fixed axis (its trochlea is a cylinder about it): "
                          "use axis='inman' or 'original'")
@@ -304,8 +310,11 @@ def build(src: Path, out_dir: Path, knee_angle_deg: float | None, ligaments: boo
         shutil.copy2(src / "Geometry" / f"{m}.stl", mesh_dir / f"{m}.stl")
 
     set_ankle_axis(model, femur, axis, mesh_dir, swing_deg)
+    tc_ligs = []
     if ligaments:
-        add_ligaments(model, femur, mesh_dir)
+        tc = LIG.talocalcaneal(mesh_dir, talocalcaneal, ptcl_width, mtcl_width, tc_onset) if talocalcaneal else ([], {})
+        tc_ligs = tc[0]
+        add_ligaments(model, femur, mesh_dir, tc)
         st_hinge = next(j for j in femur.iter("joint") if j.get("name") == "subtalar_angle_r")
         st_hinge.set("range", _fmt(SUBTALAR_RANGE))
     if six_dof:
@@ -334,12 +343,17 @@ def build(src: Path, out_dir: Path, knee_angle_deg: float | None, ligaments: boo
            if six_dof else "")
         + (" Midfoot joint: yes (midfoot.py" + (", guard ranges" if midfoot_guard else "")
            + (f", stiffness scale {midfoot_scale}" if midfoot_scale else "") + ")." if midfoot else "")
+        + (f" Talocalcaneal ligaments: {', '.join(l.name[:-2] for l in tc_ligs) or 'none'}"
+           + (f" (PTCL width {ptcl_width:g} mm assumed)" if ptcl_width and any(l.name == 'PTCL_r' for l in tc_ligs) else "")
+           + (f" (MTCL width {mtcl_width:g} mm assumed)" if mtcl_width and any(l.name == 'MTCL_r' for l in tc_ligs) else "")
+           + (f", slack within +-{tc_onset:g} deg (assumed)" if tc_ligs and tc_onset else "")
+           + "." if ligaments else "")
         + " Do not edit by hand; edit the generator and rebuild. -->\n"
     )
     out = out_dir / "ankle_foot_r.xml"
     out.write_text(header + ET.tostring(model, encoding="unicode") + "\n", encoding="utf-8")
     if ligaments:
-        for name, L0 in set_slack_lengths(out, LIG.LIGAMENTS + midfoot_ligs).items():
+        for name, L0 in set_slack_lengths(out, LIG.LIGAMENTS + tc_ligs + midfoot_ligs).items():
             print(f"  {name:8s} slack length {L0 * 1000:5.1f} mm")
     return out
 
@@ -378,7 +392,26 @@ def main() -> None:
                         "for sensitivity studies; repeatable")
     p.add_argument("--midfoot-guard", action="store_true",
                    help=f"midfoot joint ranges +-{MF.GUARD_DEG:g} deg instead of Hicks 1953's")
+    p.add_argument("--talocalcaneal", default="none", metavar="LIST",
+                   help="EXPERIMENTAL talocalcaneal ligaments (ligaments.py, Jira AT-17): comma list of LTCL, PTCL, "
+                        "MTCL, or 'none' (default). LTCL: Edama 2019 dimensions (present in 42%% of feet). PTCL and "
+                        "MTCL have no published width: they need --ptcl-width / --mtcl-width, which are assumptions. "
+                        "No zero-strain data exist for any of them: see --tc-onset")
+    p.add_argument("--tc-onset", type=float, default=0.0, metavar="DEG",
+                   help="ASSUMED: the talocalcaneal ligaments are slack within +-DEG of subtalar rotation (default 0: "
+                        "taut from neutral)")
+    p.add_argument("--ptcl-width", type=float, default=None, metavar="MM", help="ASSUMED PTCL width (mm)")
+    p.add_argument("--mtcl-width", type=float, default=None, metavar="MM", help="ASSUMED MTCL width (mm)")
     args = p.parse_args()
+    tc = () if args.talocalcaneal.lower() == "none" else tuple(
+        f"{n.strip().upper()}_r" for n in args.talocalcaneal.split(",") if n.strip())
+    bad = [n for n in tc if n not in LIG.TALOCALCANEAL]
+    if bad:
+        p.error(f"--talocalcaneal: unknown {bad}; choose from LTCL, PTCL, MTCL or none")
+    if "PTCL_r" in tc and args.ptcl_width is None:
+        p.error("PTCL needs --ptcl-width (no published width: an assumption)")
+    if "MTCL_r" in tc and args.mtcl_width is None:
+        p.error("MTCL needs --mtcl-width (no published dimensions: an assumption)")
     scale = {}
     for item in args.midfoot_scale:
         g, _, f = item.partition("=")
@@ -400,7 +433,8 @@ def main() -> None:
     out = build(args.src, args.out, None if args.free_knee else args.knee_angle,
                 ligaments=not args.no_ligaments, six_dof=args.six_dof, axis=axis, swing_deg=args.swing_deg,
                 subtalar=args.subtalar, navicular_stiffness=args.navicular_stiffness,
-                midfoot=args.midfoot, midfoot_scale=scale or None, midfoot_guard=args.midfoot_guard)
+                midfoot=args.midfoot, midfoot_scale=scale or None, midfoot_guard=args.midfoot_guard,
+                talocalcaneal=tc, ptcl_width=args.ptcl_width, mtcl_width=args.mtcl_width, tc_onset=args.tc_onset)
     print(f"wrote {out}")
 
 
