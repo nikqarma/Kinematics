@@ -319,7 +319,12 @@ def build(src: Path, out_dir: Path, knee_angle_deg: float | None, ligaments: boo
         st_hinge.set("range", _fmt(SUBTALAR_RANGE))
     if six_dof:
         TC.add_joint(model, femur, mesh_dir)
-        if subtalar == "contact":
+        if subtalar == "ct":
+            if midfoot != "contact":
+                raise ValueError("the CT subtalar joint needs midfoot='contact' (the navicular part of the socket)")
+            ST.add_joint(model, femur, mesh_dir, head=(MF.CONTACT_HEAD_TALUS, MF.FA.HEAD_RADIUS), navicular=False,
+                         ct=True)
+        elif subtalar == "contact":
             if navicular_stiffness is not None:      # N/mm on the command line
                 ST.PARAMS["navicular_stiffness"] = (navicular_stiffness * 1e3,) + ST.PARAMS["navicular_stiffness"][1:]
             if midfoot == "contact":
@@ -331,7 +336,7 @@ def build(src: Path, out_dir: Path, knee_angle_deg: float | None, ligaments: boo
                 ST.add_joint(model, femur, mesh_dir)
     midfoot_ligs = []
     if midfoot:
-        if six_dof and subtalar == "contact" and midfoot != "contact":
+        if six_dof and subtalar in ("contact", "ct") and midfoot != "contact":
             raise ValueError("the hinge midfoot cannot take the contact subtalar joint's navicular plates: "
                              "use midfoot='contact'")
         if not ligaments:
@@ -346,7 +351,7 @@ def build(src: Path, out_dir: Path, knee_angle_deg: float | None, ligaments: boo
         f"     Knee: {knee}. Ligaments: {'yes' if ligaments else 'no'}."
         f" Talocrural joint: {'6-DOF with contact' if six_dof else '1-DOF hinge'}, {axis} axis"
         + (f" ({swing_deg:g} deg swing)" if axis == "moving" else "") + "."
-        + (f" Subtalar joint: {'6-DOF with contact, anatomical axis' if subtalar == 'contact' else '1-DOF hinge'}."
+        + (f" Subtalar joint: {'6-DOF with contact, anatomical axis' if subtalar == 'contact' else '6-DOF with CT contact pairs (KU Leuven)' if subtalar == 'ct' else '1-DOF hinge'}."
            if six_dof else "")
         + (f" Midfoot joint: {'hinge' if midfoot is True else midfoot} (midfoot.py" + (", guard ranges" if midfoot_guard else "")
            + (f", stiffness scale {midfoot_scale}" if midfoot_scale else "") + ")." if midfoot else "")
@@ -388,7 +393,7 @@ def main() -> None:
                    help="with the contact subtalar joint: how the navicular part of the talar-head socket is held "
                         "to the calcaneus. Default rigid (inf); 0 removes it; a number springs it (N/mm). "
                         "No measured value exists yet: see README, '6-DOF subtalar joint'")
-    p.add_argument("--subtalar", choices=("hinge", "contact"), default="contact",
+    p.add_argument("--subtalar", choices=("hinge", "contact", "ct"), default="contact",
                    help="with --six-dof: 'contact' = 6-DOF subtalar joint with articular contact about an "
                         "anatomical axis (see subtalar.py); 'hinge' = MS-Human-700's 1-DOF hinge")
     p.add_argument("--midfoot", nargs="?", const="hinge", default=None, choices=MF.MODES,

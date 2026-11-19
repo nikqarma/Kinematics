@@ -36,6 +36,10 @@ AT-16; Confluence "Design: midfoot contact and navicular socket"):
      direction is the calcaneal surface normal there, and its length the local joint space, so every
      pair is congruent and open at neutral by construction. (Height fields over one mid-plane do not
      work: the saddle facets curl at their edges.)
+  9. Talocalcaneal contact pairs for subtalar.py's CT mode (Jira AT-17, AT-16), the same way: talar facet
+     vertices within 3 mm of the calcaneus and over 4 mm from the navicular, about 4 mm apart, each paired
+     with its closest point on the calcaneus; split into the posterior facet and the anterior and middle
+     facets. Mapped by the same registration, so they are consistent with the talar head and the midfoot.
 
 Usage: python tools/kul_midfoot_register.py <kul_footmodel folder> [--facets midfoot_facets.py]
 """
@@ -284,6 +288,25 @@ CC_CALCANEAL = (
 CC_CUBOID = (
 {cub_rows}
 )
+
+# Talocalcaneal contact pairs (subtalar.py, CT mode): row i of each *_TALAR tuple (talus_r frame) faces row i of
+# the matching *_CALCANEAL tuple (calcn_r frame); the normal is the pair's direction, pointing to the other bone.
+# Posterior facet: {npost} pairs, joint space {pmin:.2f}-{pmax:.2f} mm (median {pmed:.2f}); fitted cylinder (calcaneal side)
+# diameter {pdia:.1f} mm, rms {prms:.2f} mm, axis {pax} (calcn_r frame; Kleipool 2019: 42.0 +/- 7.7 mm, a cylinder
+# from superoposterolateral to inferoanteromedial). Anterior and middle facets: {nant} pairs, joint space
+# {amin:.2f}-{amax:.2f} mm (median {amed:.2f}).
+TC_POSTERIOR_TALAR = (
+{pt_rows}
+)
+TC_POSTERIOR_CALCANEAL = (
+{pc_rows}
+)
+TC_ANTERIOR_TALAR = (
+{at_rows}
+)
+TC_ANTERIOR_CALCANEAL = (
+{ac_rows}
+)
 '''
 
 
@@ -335,6 +358,36 @@ def facets(kul: Path, osim, o_cal: np.ndarray, out: Path) -> None:
         sel = (az >= a0) & (az < a0 + 30)
         outline.append((a0 + 15, round(float(polar[sel].max()), 1) if sel.any() else 0.0))
 
+    # talocalcaneal pairs (step 9)
+    tc = tal[(near_dist(tal, cal) < 0.003) & (near_dist(tal, mid) > 0.004)]
+    split = 0.5 * (np.percentile(tc[:, 0], 15) + np.percentile(tc[:, 0], 85))
+    tc_pairs = {}
+    for key, part in (("post", tc[tc[:, 0] < split]), ("ant", tc[tc[:, 0] >= split])):
+        pc_, nc_, qt_ = contact_pairs(m(part), m(cal_tri.reshape(-1, 3)).reshape(-1, 3, 3))
+        tc_pairs[key] = (pc_, nc_, qt_ - MF.TALUS_IN_CALCN, np.linalg.norm(qt_ - pc_, axis=1))
+
+    def cyl(P):
+        Nn = []
+        for q in P:
+            nb = P[np.argsort(np.linalg.norm(P - q, axis=1))[:8]]
+            Nn.append(np.linalg.eigh(np.cov((nb - nb.mean(0)).T))[1][:, 0])
+        a = np.linalg.eigh(np.array(Nn).T @ np.array(Nn))[1][:, 0]
+        a = a if a[0] > 0 else -a
+        e1 = np.cross(a, [0, 0, 1.0])
+        e1 /= np.linalg.norm(e1)
+        e2 = np.cross(a, e1)
+        Q = np.c_[P @ e1, P @ e2]
+        sol = np.linalg.lstsq(np.c_[2 * Q, np.ones(len(Q))], (Q ** 2).sum(1), rcond=None)[0]
+        r = math.sqrt(sol[2] + sol[:2] @ sol[:2])
+        return a, r, float(np.sqrt(np.mean((np.linalg.norm(Q - sol[:2], axis=1) - r) ** 2)))
+
+    post_full = m(cal[(near_dist(cal, tal) < 0.003) & (cal[:, 0] < split)])
+    p_ax, p_r, p_rms = cyl(post_full)
+    for key in ("post", "ant"):
+        g_ = tc_pairs[key][3]
+        print(f"# talocalcaneal {key}: {len(g_)} pairs, joint space {g_.min() * 1e3:.2f}-{g_.max() * 1e3:.2f} mm")
+    print(f"# posterior facet cylinder: diameter {2 * p_r * 1e3:.1f} mm, rms {p_rms * 1e3:.2f} mm, axis {np.round(p_ax, 3)}")
+
     centre = 0.5 * (p_cal.mean(0) + p_cub.mean(0))
     print(f"# facets: anterior-calcaneus registration scale {s:.3f}, mean surface distance {res[0] * 1e3:.1f} mm")
     print(f"# calcaneocuboid: {len(cc_cal)} / {len(cc_cub)} KU Leuven vertices -> {len(p_cal)} / {len(p_cub)} "
@@ -357,7 +410,16 @@ def facets(kul: Path, osim, o_cal: np.ndarray, out: Path) -> None:
         h0=h_talus[0], h1=h_talus[1], h2=h_talus[2], hoff=np.linalg.norm(h_calcn - MF.HEAD_CENTRE) * 1e3,
         nmin=node_gap.min() * 1e3, nmax=node_gap.max() * 1e3, nmed=float(np.median(node_gap)) * 1e3,
         c0=c[0], c1=c[1], c2=c[2], outline=tuple(outline), gmin=gap.min() * 1e3, gmed=float(np.median(gap)) * 1e3,
-        cal_rows=rows(p_cal, n_cal), cub_rows=rows(p_cub, n_cub)), encoding="utf-8", newline="\n")
+        cal_rows=rows(p_cal, n_cal), cub_rows=rows(p_cub, n_cub),
+        npost=len(tc_pairs["post"][0]), nant=len(tc_pairs["ant"][0]),
+        pmin=tc_pairs["post"][3].min() * 1e3, pmax=tc_pairs["post"][3].max() * 1e3,
+        pmed=float(np.median(tc_pairs["post"][3])) * 1e3,
+        amin=tc_pairs["ant"][3].min() * 1e3, amax=tc_pairs["ant"][3].max() * 1e3,
+        amed=float(np.median(tc_pairs["ant"][3])) * 1e3,
+        pdia=2 * p_r * 1e3, prms=p_rms * 1e3, pax=tuple(round(float(v), 3) for v in p_ax),
+        pt_rows=rows(tc_pairs["post"][2], -tc_pairs["post"][1]), pc_rows=rows(tc_pairs["post"][0], tc_pairs["post"][1]),
+        at_rows=rows(tc_pairs["ant"][2], -tc_pairs["ant"][1]), ac_rows=rows(tc_pairs["ant"][0], tc_pairs["ant"][1])),
+        encoding="utf-8", newline="\n")
     print(f"wrote {out}")
 
 

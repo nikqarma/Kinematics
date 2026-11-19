@@ -164,14 +164,60 @@ def _cup(prefix: str, centre: np.ndarray, radius: float, dirs, half: float, cona
     return geoms
 
 
+CT_SPHERE_RADIUS = 0.0015      # m; small, so each sphere follows the facet point it stands for
+CT_PLATE_HALF = 0.0023         # m; plates 4.6 mm square at a ~4 mm spacing, so neighbours overlap
+CT_PAIR_REACH = 0.008          # m; each talar sphere is paired with every calcaneal plate this close (and facing it)
+
+
+def _add_ct_facets(model: ET.Element, talus: ET.Element, calcn: ET.Element, calc_off: np.ndarray, gap: float) -> None:
+    """Talocalcaneal contact pairs from the CT bones (see add_joint, ct=True)."""
+    import midfoot_facets as FA
+    t = 0.0005
+    contact = model.find("contact")
+    for tag, cal_rows in (("post", FA.TC_POSTERIOR_CALCANEAL), ("ant", FA.TC_ANTERIOR_CALCANEAL)):
+        cal = np.array(cal_rows)                       # calcn_r frame; normal points to the talus
+        touch = cal[:, :3] + gap * cal[:, 3:]          # the talar cartilage surface, `gap` above the calcaneal one
+        plates, spheres = [], []
+        first = next((i for i, e in enumerate(calcn) if e.tag == "body"), len(calcn))
+        for i, row in enumerate(cal):
+            n = row[3:]
+            x = np.cross(n, [0.0, 1.0, 0.0])
+            x = x / np.linalg.norm(x) if np.linalg.norm(x) > 1e-6 else np.array([1.0, 0.0, 0.0])
+            calcn.insert(first, ET.Element("geom", {
+                "name": f"tc_{tag}_calcaneal_{i:02d}_r", "class": "cartilage", "type": "box",
+                "size": _fmt([CT_PLATE_HALF, CT_PLATE_HALF, t]), "pos": _fmt(row[:3] - t * n),
+                "xyaxes": _fmt(np.r_[x, np.cross(n, x)]), "contype": "0", "conaffinity": "0"}))
+            plates.append(f"tc_{tag}_calcaneal_{i:02d}_r")
+        first = next((i for i, e in enumerate(talus) if e.tag == "body"), len(talus))
+        for i, row in enumerate(cal):
+            centre = touch[i] + CT_SPHERE_RADIUS * row[3:] + calc_off       # talus frame (same axes at neutral)
+            talus.insert(first, ET.Element("geom", {
+                "name": f"tc_{tag}_talar_{i:02d}_r", "class": "cartilage", "type": "sphere",
+                "size": f"{CT_SPHERE_RADIUS:g}", "pos": _fmt(centre), "contype": "0", "conaffinity": "0"}))
+            spheres.append(f"tc_{tag}_talar_{i:02d}_r")
+        for i, sname in enumerate(spheres):
+            near = ((np.linalg.norm(cal[:, :3] - cal[i, :3], axis=1) < CT_PAIR_REACH)
+                    & (np.einsum("ij,j->i", cal[:, 3:], cal[i, 3:]) > 0.5)
+                    & (np.einsum("ij,ij->i", touch[i] - cal[:, :3], cal[:, 3:]) > 0.5 * gap))
+            for j in np.flatnonzero(near):
+                ET.SubElement(contact, "pair", geom1=sname, geom2=plates[j], **CONTACT)
+
+
 def add_joint(model: ET.Element, femur: ET.Element, mesh_dir: Path,
-              head: tuple[np.ndarray, float] | None = None, navicular: bool = True) -> dict:
+              head: tuple[np.ndarray, float] | None = None, navicular: bool = True, ct: bool = False) -> dict:
     """Turn the subtalar hinge into a 6-DOF joint with contact. Needs talocrural.add_joint() first
     (its default classes and option flags are reused). Returns the joint geometry.
 
     head: (centre in the talus frame, radius) to use instead of this module's sphere fit (the contact
     midfoot's KU Leuven head, so both cups share one head). navicular=False leaves out the navicular part
-    of the socket (the contact midfoot's cup replaces it)."""
+    of the socket (the contact midfoot's cup replaces it).
+
+    ct=True replaces the idealised surfaces (talar-head cup, posterior-facet spheres) by contact pairs taken from
+    the KU Leuven CT bones (midfoot_facets.py, Jira AT-17): the posterior facet and the anterior and middle facets,
+    each a small sphere on the talus facing a plate on the calcaneus at its closest point. The CT joint space is
+    bone to bone, so it is cartilage: each pair touches at neutral with the usual unloaded clearance. The motion
+    then follows the facets' own shape (the posterior facet is a cylinder, Kleipool 2019; the axis slides along
+    it, Ogihara 2025) instead of rotation about one imposed axis. Needs the contact midfoot for the navicular."""
     bodies = {b.get("name"): b for b in femur.iter("body")}
     talus, calcn = bodies["talus_r"], bodies["calcn_r"]
     calc_off = np.array([float(c) for c in calcn.get("pos").split()])      # calcn origin in the talus frame
@@ -200,6 +246,13 @@ def add_joint(model: ET.Element, femur: ET.Element, mesh_dir: Path,
             "axis": _fmt(axis), "range": "-0.7 0.7"}))
 
     # ---- articular geometry -------------------------------------------------
+    if ct:
+        _add_ct_facets(model, talus, calcn, calc_off, gap)
+        contact = model.find("contact")
+        for ex in list(contact.findall("exclude")):
+            if {ex.get("body1"), ex.get("body2")} == {"talus_r", "calcn_r"}:
+                contact.remove(ex)
+        return g
     first = next((i for i, e in enumerate(talus) if e.tag == "body"), len(talus))
     talar = [ET.Element("geom", {
         "name": "talar_head_r", "class": "cartilage", "type": "sphere", "size": f"{r_h - gap:.6g}",

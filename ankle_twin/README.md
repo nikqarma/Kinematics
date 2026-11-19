@@ -323,6 +323,19 @@ Sweep on the `inman` 6-DOF build (Pellegrini at 10° DF: intact / CFL cut / all 
 - **The LTCL contradicts Pellegrini at every slack tested.** It holds the joint near 5-6° whatever else is cut, so cutting the CFL, CL and ITCL changes nothing; Pellegrini's joints opened 13-19° with the LTCL intact (in the 42% that have one). In this model, inverting the calcaneus in that rig mostly opens the joint laterally, so a lateral band at the joint margin takes over; the real joint evidently does not open that way.
 - **No combination reaches Weindel's rotation,** and inversion-eversion only comes within 2 SD with the two unsourced ligaments at their widest. Ligaments alone do not fix this joint: without compression it separates too easily. That is why they stay off by default.
 
+**CT facets (`--subtalar ct`, experimental; needs `--midfoot contact`).** The posterior facet really is a cylinder: on the KU Leuven CT calcaneus a cylinder fits with 0.40 mm rms (a sphere 0.89 mm), 45.6 mm across at this model's scale (Kleipool 2019: 42.0 ± 7.7 mm), its axis descending 13° forward and 41° medial (Kleipool: superoposterolateral to inferoanteromedial), far from the imposed 42°/23° rotation axis. A cylinder seated with the talar-head cup would lock the joint, so `ct` instead replaces the cup and the posterior-facet spheres with contact pairs from the CT bones (26 on the posterior facet, 19 on the anterior and middle facets; `midfoot_facets.py`), with no imposed axis. The CT joint space is cartilage, so each pair touches at neutral with the usual 0.2 mm clearance; the contact midfoot's calcaneocuboid pairs now do the same (they had stood 0.5-3.1 mm apart).
+
+| `--six-dof --midfoot contact` | sphere subtalar | `--subtalar ct` | Literature |
+|---|---|---|---|
+| Pellegrini intact, 10 DF / 0 / 10 PF / 20 PF | 6.5 / 7.5 / 8.5 / 9.4° | 6.6 / 7.8 / 9.0 / 10.2° | 3.8 / 7.2 / 8.0 / 10.8° |
+| CFL cut at 10 DF; all three cut | 11.7°; 12.6° (contained, every angle) | 12.8°; 21.6° (dislocated) | ~9.7°; 13.1 / 16.3 / 19.2° |
+| Eversion; medial drawer | 9.2°; 3.0 mm | 19.8°; 6.3 mm | 4.6°; 1.5 mm |
+| Weindel intact inversion-eversion / rotation | 22.3 / 37.9° | 30.9 / 55.4° (dislocated) | 16.8 / 15.7° |
+| Baumbach calcaneocuboid, axial / medial / lateral | 1.18 / 0.65 / 4.15 mm | 1.18 / 0.70 / 4.13 mm | 0.15 / 0.8 / 1.83 mm |
+
+- **The real, incongruent facets hold the joint together less, not more.** Without the capsule and the talocalcaneal ligaments they allow far more eversion and rotation; the idealised cup was standing in for those soft tissues. `ct` stays an option.
+- **With cartilage-filled calcaneocuboid pairs the sphere build no longer dislocates** after the three cuts (12.6° vs Pellegrini 13.1° at 10 DF, but flat across flexion: with the ankle pinned and the CFL cut nothing left depends on it), and Baumbach's medial calcaneocuboid gap passes.
+
 **Colville 1990 benchmark.** Strain gauges, subtalar joint screwed, 3 N·m moments; full text read. Model ATFL here is the superior band. On both axes the model reproduces:
 - ATFL lengthening from 20° DF to 30° PF (+25% on `inman`; Colville +15%);
 - the ATFL lengthening with inversion and with internal rotation at every angle;
