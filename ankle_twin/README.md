@@ -281,7 +281,7 @@ Nothing here is fitted to a benchmark. Cup coverage, the facet point on the mesh
 
   Pellegrini: +5.9° at 10° DF as soon as the CFL was cut; at neutral, significant only once the CL was cut too (+5.7°); CL + ITCL alone not significant at any angle. The model has the same pattern (the CFL matters in dorsiflexion, not at neutral, and more than the other two there) at about a sixth of the size.
 - **Why the CFL's effect is small:** at neutral the talar-head cup carries about 2.9 of the rig's 4 N·m and the CFL 0.9 N·m. With the CFL cut the cup stops the joint at 7.0°, where Pellegrini's joints reached 10° or more. The cup's coverage and direction are assumed, and its infero-medial part is the spring ligament in reality, soft tissue represented here by rigid plates.
-- **Over-reads the last cut:** with all three cut the model reaches 27°; Pellegrini's reached 13–19° across flexion angles. The model has no lateral or posterior talocalcaneal ligaments, capsule or retinaculum to take over.
+- **The last cut dislocates the joint (KNOWN, Jira AT-17):** with all three cut the calcaneus separates about 12 mm from the talus and slides 15–21 mm medially. The 27° in the table is where the subtalar slide joints' ±15 mm safety limit stops it: with a ±10 / ±20 / ±30 mm limit it reads 18.5 / 31.1 / 31.8°. Pellegrini's joints stayed together at 13–19°. The verifier now reports any result reached with a slide at its limit as a dislocation, not an angle (`bench.slides_at_limit`).
 - **The socket has a rigid part and a part that should not be rigid.** The talar head sits in a socket made of the anterior and middle calcaneal facets (bone, below the head) and the navicular with the spring ligament (in front and medially). In the model's one-piece foot both are rigid with the calcaneus. In a real foot the navicular is joined to the calcaneus only through the midtarsal joint and its ligaments: with the subtalar joint fused, the talonavicular joint keeps 26% of its motion and the calcaneocuboid joint 56% (Astion 1997). Pellegrini clamped only the calcaneus. The plate that carries the rig's inversion torque is antero-medial, on the navicular part.
 - **Bracket (`--navicular-stiffness`, N/mm):** the plates within 45° of straight plantar are kept on the calcaneus; the rest can be rigid (default), sprung in translation, or absent.
 
@@ -299,6 +299,29 @@ Nothing here is fitted to a benchmark. Cup coverage, the facet point on the mesh
 - **What the bracket does not explain:** with all three ligaments cut the joint still opens to 27° at any stiffness, and the 3.8° at 10° DF needs more restraint in dorsiflexion than the CFL gives.
 - **Flexion trend too small (KNOWN):** Pellegrini's subtalar inversion triples from 10° DF to 20° PF (3.8° to 10.8°); the model's rises from 6.0° to 7.0°. With the ankle pinned only the CFL can carry that dependence. It now tightens in dorsiflexion and gives the right direction, but the cup caps the range at 7.0°. A more vertical CFL gives a stronger trend (4.8° to 6.3° at 14° behind the fibula), as Edama 2017's angle classes suggest.
 - **Sensitivity (run before the CFL correction, not repeated since):** intact inversion at neutral stayed between 4.0° and 7.0° when each uncertain input was moved in turn: the axis angles by ± 1 SD, the facet radius by ± 1 SD, the facet point by ± 3 mm, cup coverage and direction, and clearance from 0 to 0.5 mm. That is inside Pellegrini's ± 2 SD throughout. Internal rotation is the sensitive output (4–14°, driven by axis inclination).
+
+**Weindel 2010 benchmark (`bench.WeindelRig`, 6-DOF subtalar builds).** Ankle fused, calcaneus free, pure moments (±2.5 N·m flexion and inversion-eversion, ±10 N·m rotation), total range after the same sequential cuts in Weindel's two orders. The inferior extensor retinaculum is not modelled, so that cut changes nothing here; the bifurcate exists only on midfoot builds.
+- **Intact joint too lax without a compressive load (KNOWN, AT-17):** inversion-eversion 27.8° and rotation 32.5° (Weindel 16.8 ± 2.6° and 15.7 ± 4.4°). Pellegrini's rig adds a 36 N axial load and gets much closer (6.0° vs 3.8° at 10° DF). Weindel's specimens kept their capsule and posterior and medial talocalcaneal ligaments; the model has neither.
+- **Contained after Weindel's cuts:** with the cervical ligament intact (as in Weindel), no slide reaches its limit.
+
+**Talocalcaneal ligaments (`--talocalcaneal`, experimental, off by default; AT-17).** `ligaments.py` can add the lateral (LTCL), posterior (PTCL) and medial (MTCL) talocalcaneal ligaments. Attachments follow Pastore 2009. Stiffness is this model's CFL (Rochelle 2020) scaled by width × thickness / length, using Edama 2019's CFL dimensions.
+- **LTCL:** Edama 2019 (100 legs; present in 42%): 25.4 × 4.0 × 1.5 mm, so 40.2 N/mm and 267 N. Model length 23.9 mm.
+- **PTCL:** Cankaya 2021 (MR arthrography, present in 65.5%): 15.9 mm long, 1.1 mm thick, no width. Needs `--ptcl-width` (an assumption).
+- **MTCL:** Pastore 2009 (present in 100%) gives attachments only. Needs `--mtcl-width` (an assumption; thickness taken as the CFL's).
+- **Slack:** no zero-strain data for any of them; `--tc-onset DEG` makes them slack within ±DEG of subtalar rotation (default 0, taut from neutral).
+
+Sweep on the `inman` 6-DOF build (Pellegrini at 10° DF: intact / CFL cut / all three; Weindel intact inversion-eversion / rotation):
+
+| Ligaments | Pellegrini | Weindel |
+|---|---|---|
+| none (default) | 6.0 / 7.0 / 27.3° (dislocated) | 27.8 / 32.5° |
+| LTCL, taut from neutral | 4.9 / 5.0 / 5.0° | 26.9 / 32.1° |
+| LTCL, slack ±14° | 5.5 / 5.8 / 6.0° | 27.4 / 32.4° |
+| LTCL + PTCL + MTCL 12 mm, slack ±5° (assumed) | 5.1 / 5.2 / 5.4° | 19.5 / 24.9° |
+| Literature | 3.8 / ~9.7 / 13.1° | 16.8 ± 2.6 / 15.7 ± 4.4° |
+
+- **The LTCL contradicts Pellegrini at every slack tested.** It holds the joint near 5-6° whatever else is cut, so cutting the CFL, CL and ITCL changes nothing; Pellegrini's joints opened 13-19° with the LTCL intact (in the 42% that have one). In this model, inverting the calcaneus in that rig mostly opens the joint laterally, so a lateral band at the joint margin takes over; the real joint evidently does not open that way.
+- **No combination reaches Weindel's rotation,** and inversion-eversion only comes within 2 SD with the two unsourced ligaments at their widest. Ligaments alone do not fix this joint: without compression it separates too easily. That is why they stay off by default.
 
 **Colville 1990 benchmark.** Strain gauges, subtalar joint screwed, 3 N·m moments; full text read. Model ATFL here is the superior band. On both axes the model reproduces:
 - ATFL lengthening from 20° DF to 30° PF (+25% on `inman`; Colville +15%);

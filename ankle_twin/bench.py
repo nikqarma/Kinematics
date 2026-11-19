@@ -23,6 +23,8 @@ HELD = ("ankle_angle_r", "subtalar_angle_r")
 TALAR_PLAY = ("talus_tx_r", "talus_ty_r", "talus_tz_r", "talus_tilt_r", "talus_rot_r")
 SUBTALAR_PLAY = ("subtalar_tx_r", "subtalar_ty_r", "subtalar_tz_r", "subtalar_flex_r", "subtalar_twist_r")
 LIGAMENTS = ("ATFL_r", "ATFLi_r", "CFL_r", "PTFL_r", "TNL_r", "TSL_r", "TCL_r", "dATTL_r", "dPTTL_r", "CL_r", "ITCL_r")
+# talocalcaneal ligaments (research-twin, --talocalcaneal); present only when built
+TALOCALCANEAL_LIGAMENTS = ("LTCL_r", "PTCL_r", "MTCL_r")
 # present only in --midfoot builds (midfoot.py)
 MIDFOOT_LIGAMENTS = ("SCN1_r", "SCN2_r", "SCN3_r", "DCC_r", "BCN_r", "BCC_r", "DTN1_r", "DTN2_r", "SPLd_r", "SPLs_r",
                      "LPL1_r", "LPL2_r", "LPL3_r", "LPL4_r")
@@ -65,7 +67,7 @@ class Bench:
         self.m.opt.gravity[2] = -9.81 if gravity else 0.0
         self._hold_ids = {j: self.m.equality(f"hold_{j}").id for j in list(HELD) + self._subtalar_play}
         self.calcn = self.m.body("calcn_r").id
-        self.lig_ids = [self.m.tendon(n).id for n in LIGAMENTS if self._has_tendon(n)]
+        self.lig_ids = [self.m.tendon(n).id for n in LIGAMENTS + TALOCALCANEAL_LIGAMENTS if self._has_tendon(n)]
         self.reset()
 
     def _has_tendon(self, name: str) -> bool:
@@ -154,7 +156,7 @@ class Bench:
         return dict(zip(LIGAMENTS, self.d.ten_length[self.lig_ids] / L0 - 1))
 
     def ligament_forces(self) -> dict[str, float]:
-        return {n: ligament_force(self.m, self.d, n) for n in LIGAMENTS if self._has_tendon(n)}
+        return {n: ligament_force(self.m, self.d, n) for n in LIGAMENTS + TALOCALCANEAL_LIGAMENTS if self._has_tendon(n)}
 
     def contact(self) -> tuple[float, float]:
         """(total normal contact force in the talocrural joint N, deepest penetration m)."""
@@ -168,6 +170,22 @@ class Bench:
                 fn += f6[0]
                 pen = min(pen, c.dist)
         return fn, -pen
+
+
+SAFETY_SLIDES = ("talus_tx_r", "talus_ty_r", "talus_tz_r", "subtalar_tx_r", "subtalar_ty_r", "subtalar_tz_r",
+                 "midtarsal_tx_r", "midtarsal_ty_r", "midtarsal_tz_r")
+
+
+def slides_at_limit(m: mujoco.MjModel, d: mujoco.MjData) -> list[str]:
+    """Translational joints held by their range (numerical safety limits, not anatomy). A result reached with
+    any of these active is a dislocation stopped by the limit, not a joint angle."""
+    out = []
+    for i in range(d.nefc):
+        if d.efc_type[i] == mujoco.mjtConstraint.mjCNSTR_LIMIT_JOINT and d.efc_force[i] != 0.0:
+            name = m.joint(d.efc_id[i]).name
+            if name in SAFETY_SLIDES:
+                out.append(name)
+    return out
 
 
 class HindfootRig:
@@ -296,6 +314,10 @@ class HindfootRig:
         """Cradle rotation (deg): 'roll' + = inversion, 'yaw' + = internal rotation."""
         return math.degrees(float(self.d.qpos[self.m.joint(self.AXES[axis]).qposadr[0]]))
 
+    def at_limit(self) -> list[str]:
+        """Safety slides held by their range (see slides_at_limit)."""
+        return slides_at_limit(self.m, self.d)
+
     def platform(self) -> np.ndarray:
         """Platform translation (m): (anterior, medial)."""
         return np.array([self.d.qpos[self.m.joint(j).qposadr[0]] for j in ("cradle_x", "cradle_y")])
@@ -377,7 +399,7 @@ class TendonPullRig:
         return ang, Ra @ (w / (np.linalg.norm(w) + 1e-12))
 
     def ligament_forces(self) -> dict[str, float]:
-        return {n: ligament_force(self.m, self.d, n) for n in LIGAMENTS + MIDFOOT_LIGAMENTS
+        return {n: ligament_force(self.m, self.d, n) for n in LIGAMENTS + TALOCALCANEAL_LIGAMENTS + MIDFOOT_LIGAMENTS
                 if ligament_tendon_ids(self.m, n)}
 
 
@@ -458,3 +480,79 @@ class ChopartStressRig:
             out["translation"] = 1e3 * float(np.linalg.norm(
                 [d.qpos[m.joint(f"midtarsal_t{a}_r").qposadr[0]] for a in "xyz"]))
         return out
+
+
+class WeindelRig:
+    """Weindel 2010's rig: ankle fused, the calcaneus on a gimbal, pure moments (6-DOF subtalar builds).
+
+    Weindel fused the talocrural joint with two crossing malleolar screws, fixed the tibia and fibula to a
+    platform and the calcaneus to a gimbal that left it free in every direction, and applied pure moments
+    about one axis at a time: +-2.5 N*m plantar-dorsiflexion and inversion-eversion, +-10 N*m internal-
+    external rotation. Range of motion is calcaneus relative to talus, from one extreme to the other, after
+    sequential ligament cuts. Here the talus is screwed to the tibia, gravity is off, and the moment acts on
+    the calcaneus about the talus frame's axes (x anterior: inversion-eversion; y superior: rotation;
+    z lateral: plantar-dorsiflexion).
+
+        rig = WeindelRig(xml)
+        rig.cut("ITCL_r")
+        rig.range("invev")          # deg, and the safety slides at their limit, if any
+    """
+
+    AXES = {"flex": (2, 2.5), "rot": (1, 10.0), "invev": (0, 2.5)}
+
+    def __init__(self, xml: str | Path):
+        spec = mujoco.MjSpec.from_file(str(xml))
+        names = {j.name for j in spec.joints}
+        for j in TendonPullRig.SCREWED:
+            if j in names:
+                eq = spec.add_equality(name=f"screw_{j}", type=mujoco.mjtEq.mjEQ_JOINT,
+                                       objtype=mujoco.mjtObj.mjOBJ_JOINT, name1=j)
+                eq.solref = [0.004, 1.0]
+        self.m = spec.compile()
+        self.m.opt.gravity[:] = 0.0
+        self.d = mujoco.MjData(self.m)
+        self.cal, self.tal = self.m.body("calcn_r").id, self.m.body("talus_r").id
+
+    def cut(self, *ligaments: str) -> None:
+        for n in ligaments:
+            ids = ligament_tendon_ids(self.m, n)
+            self.m.tendon_stiffness[ids] = 0.0
+            self.m.tendon_damping[ids] = 0.0
+
+    def _settle(self, axis: int, moment: float, seconds: float) -> bool:
+        m, d = self.m, self.d
+        t0 = d.time
+        bad0 = d.warning[mujoco.mjtWarning.mjWARN_BADQACC].number
+        while d.time - t0 < seconds:
+            if d.warning[mujoco.mjtWarning.mjWARN_BADQACC].number > bad0 or d.time < t0:
+                return False
+            d.qfrc_applied[:] = 0.0
+            torque = d.xmat[self.tal].reshape(3, 3)[:, axis] * moment
+            mujoco.mj_applyFT(m, d, np.zeros(3), torque, d.xpos[self.cal], self.cal, d.qfrc_applied)
+            mujoco.mj_step(m, d)
+            if not np.all(np.isfinite(d.qpos)):
+                return False
+        return True
+
+    def _orient(self) -> np.ndarray:
+        return self.d.xmat[self.tal].reshape(3, 3).T @ self.d.xmat[self.cal].reshape(3, 3)
+
+    def range(self, which: str, seconds: float = 1.5) -> tuple[float, list[str]]:
+        """Range of motion (deg) from -M to +M about one axis, and the safety slides at their limit at either
+        extreme. NaN if the simulation diverged."""
+        axis, M = self.AXES[which]
+        mujoco.mj_resetData(self.m, self.d)
+        lim = []
+        ok = self._settle(axis, -M, seconds)
+        Ra = self._orient()
+        lim += slides_at_limit(self.m, self.d)
+        ok &= self._settle(axis, +M, seconds)
+        Rb = self._orient()
+        lim += slides_at_limit(self.m, self.d)
+        if not ok:
+            return float("nan"), lim
+        R = Ra.T @ Rb
+        ang = math.acos(max(-1.0, min(1.0, (np.trace(R) - 1) / 2)))
+        w = np.array([R[2, 1] - R[1, 2], R[0, 2] - R[2, 0], R[1, 0] - R[0, 1]])
+        w = Ra @ (w / (np.linalg.norm(w) + 1e-12)) * ang      # rotation vector, talus frame
+        return abs(math.degrees(float(w[axis]))), sorted(set(lim))

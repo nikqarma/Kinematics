@@ -391,6 +391,7 @@ def check_six_dof(xml: Path) -> None:
     check_rasmussen1982(xml)
     check_stormont1985(xml)
     check_pellegrini2016(xml)
+    check_weindel2010(xml)
     check_colville1990(xml)
     check_sprain_order(xml)
 
@@ -554,6 +555,8 @@ def check_pellegrini2016(xml: Path) -> None:
               "turns about the rig's axis, which a 1-DOF subtalar hinge cannot follow at all")
         return
 
+    limited = {}                           # (ankle, cuts) -> safety slides held by their range
+
     def rotate(ankle, axis="roll", torque=4.0, pinned=True, cuts=()):
         rig = HindfootRig(xml, ankle)
         rig.cut(*cuts)
@@ -562,6 +565,8 @@ def check_pellegrini2016(xml: Path) -> None:
         ok = rig.settle(0.5)
         rig.free(axis)
         ok &= rig.settle(1.5, **{axis: torque})
+        if rig.at_limit():
+            limited[(ankle, tuple(cuts))] = rig.at_limit()
         return rig.angle(axis), ok
 
     def drawer(direction, pinned=True):
@@ -616,11 +621,30 @@ def check_pellegrini2016(xml: Path) -> None:
     # (Group 1), while at neutral it was significant only once the CL was cut as well (+5.7 deg). Cutting CL +
     # ITCL first (Group 2) changed nothing significant at any angle.
     cuts = {}
-    for ang in (10, 0):
-        cuts[ang] = [rotate(ang, cuts=c)[0] for c in (("CFL_r",), ("CL_r", "ITCL_r"), ("CFL_r", "CL_r", "ITCL_r"))]
-        print(f"  sectioning at {ang:+d} deg: intact {sub[ang]:.1f}, CFL cut {cuts[ang][0]:.1f}, CL+ITCL cut "
-              f"{cuts[ang][1]:.1f}, all three {cuts[ang][2]:.1f} deg")
-    print("  (Pellegrini: CFL cut +5.9 at 10 DF; CFL + CL +5.7 at neutral; all three +10.1 at 10 DF; CL + ITCL n.s.)")
+    three = ("CFL_r", "CL_r", "ITCL_r")
+    for ang in (10, 0, -10, -20):
+        sets = (("CFL_r",), ("CL_r", "ITCL_r"), three) if ang in (10, 0) else (three,)
+        vals = [rotate(ang, cuts=c)[0] for c in sets]
+        cuts[ang] = vals if ang in (10, 0) else [None, None, vals[0]]
+        flag = "  DISLOCATED (slide at its safety limit)" if (ang, three) in limited else ""
+        if ang in (10, 0):
+            print(f"  sectioning at {ang:+d} deg: intact {sub[ang]:.1f}, CFL cut {cuts[ang][0]:.1f}, CL+ITCL cut "
+                  f"{cuts[ang][1]:.1f}, all three {cuts[ang][2]:.1f} deg{flag}")
+        else:
+            print(f"  sectioning at {ang:+d} deg: intact {sub[ang]:.1f}, all three {cuts[ang][2]:.1f} deg{flag}")
+    print("  (Pellegrini: CFL cut +5.9 at 10 DF; CFL + CL +5.7 at neutral; all three +10.1 at 10 DF; CL + ITCL n.s.;"
+          " all three 13.1 / 16.3 / 19.2 deg at 10 DF / 10 PF / 20 PF)")
+    bad = sorted({a for (a, c) in limited if c == three})
+    has_mtcl = mujoco.mj_name2id(probe, mujoco.mjtObj.mjOBJ_TENDON, "MTCL_r") >= 0
+    check(not bad, "with CFL + CL + ITCL cut the subtalar joint stays contained (no slide held by its safety "
+                   f"limit{'; dislocated at ' + ', '.join(f'{a:+d}' for a in bad) + ' deg ankle' if bad else ''})",
+          known_reason=None if has_mtcl else
+          "nothing in the model restrains distraction once these three are cut: the medial talocalcaneal ligament "
+          "and the posterior-facet capsule are missing (no dimensions published; AT-17). The angle reported for "
+          "those cases is set by the slide limit, not by anatomy")
+    intact_bad = sorted({a for (a, c) in limited if not c})
+    check(not intact_bad, f"intact subtalar joint stays contained in Pellegrini's rig"
+                          f"{' (slide at its limit at ' + str(intact_bad) + ')' if intact_bad else ''}")
     s_all = cuts[0][2]
     check(s_all > sub[0] + 2, f"cutting CFL + CL + ITCL increases subtalar inversion ({sub[0]:.1f} -> {s_all:.1f} deg)")
     d_cfl, d_int = cuts[10][0] - sub[10], cuts[10][1] - sub[10]
@@ -630,6 +654,65 @@ def check_pellegrini2016(xml: Path) -> None:
     check(cuts[10][0] - sub[10] >= cuts[0][0] - sub[0],
           f"the CFL cut matters more in dorsiflexion than at neutral ({cuts[10][0] - sub[10]:+.1f} vs "
           f"{cuts[0][0] - sub[0]:+.1f} deg; Pellegrini: significant at 10 DF, not at neutral)")
+
+
+# Weindel 2010 (12 legs, ankle fused, calcaneus on a gimbal, pure moments): total subtalar range (deg, mean, SD)
+# for flexion (+-2.5 N*m), rotation (+-10 N*m) and inversion-eversion (+-2.5 N*m), after each cut in two orders.
+# BL bifurcate, IER inferior extensor retinaculum (not modelled: that cut changes nothing here).
+WEINDEL2010 = {
+    "G1": [("intact", (), ((8.1, 3.1), (14.2, 4.3), (15.8, 2.8))),
+           ("BL", ("BCN_r", "BCC_r"), ((9.1, 2.7), (14.9, 4.0), (17.0, 2.9))),
+           ("IER", (), ((9.4, 2.8), (15.3, 3.9), (17.8, 3.3))),
+           ("ITCL", ("ITCL_r",), ((10.9, 2.6), (16.2, 4.9), (20.1, 4.0))),
+           ("LTCL", ("LTCL_r",), ((10.8, 2.2), (18.9, 4.0), (20.4, 4.1))),
+           ("CFL", ("CFL_r",), ((11.5, 2.9), (19.1, 5.7), (23.2, 4.5)))],
+    "G2": [("intact", (), ((9.9, 3.2), (17.1, 4.1), (17.8, 1.9))),
+           ("CFL", ("CFL_r",), ((10.4, 3.2), (18.3, 4.3), (19.0, 1.9))),
+           ("LTCL", ("LTCL_r",), ((10.8, 3.1), (18.5, 4.4), (19.3, 1.7))),
+           ("IER", (), ((11.6, 3.9), (19.9, 5.0), (21.5, 2.4))),
+           ("ITCL", ("ITCL_r",), ((12.0, 3.8), (20.2, 5.0), (22.1, 2.8))),
+           ("BL", ("BCN_r", "BCC_r"), ((12.2, 3.8), (20.7, 5.2), (23.3, 3.2)))],
+}
+
+
+def check_weindel2010(xml: Path) -> None:
+    """Benchmark (6-DOF subtalar builds): subtalar range under pure moments after sequential cuts (WeindelRig)."""
+    from bench import WeindelRig, SUBTALAR_PLAY
+    probe = mujoco.MjModel.from_xml_path(str(xml))
+    if not all(mujoco.mj_name2id(probe, mujoco.mjtObj.mjOBJ_JOINT, j) >= 0 for j in SUBTALAR_PLAY):
+        print("\n  NOTE  Weindel 2010 benchmark skipped: it needs the 6-DOF subtalar joint")
+        return
+    has = {n: mujoco.mj_name2id(probe, mujoco.mjtObj.mjOBJ_TENDON, n) >= 0 for n in ("LTCL_r", "PTCL_r", "MTCL_r")}
+    print("\n  Weindel 2010 benchmark (ankle fused, calcaneus free, pure moments; total range, model then Weindel; "
+          "* = a slide held by its safety limit):")
+    res = {}
+    for g, steps in WEINDEL2010.items():
+        print(f"  group {g[1]}  {'flexion':>16}{'rotation':>17}{'inv-eversion':>17}")
+        done = []
+        for label, cut, ref in steps:
+            done += [c for c in cut if mujoco.mj_name2id(probe, mujoco.mjtObj.mjOBJ_TENDON, c) >= 0]
+            row = []
+            for k in ("flex", "rot", "invev"):
+                rig = WeindelRig(xml)
+                rig.cut(*done)
+                row.append(rig.range(k))
+            res[(g, label)] = row
+            cells = "".join(f"{v:6.1f}{'*' if lim else ' '}{m:5.1f}+/-{sd:<4}" for (v, lim), (m, sd) in zip(row, ref))
+            print(f"  {('+ ' if label != 'intact' else '') + label:<8}{cells}")
+    (f1, r1, i1) = res[("G1", "intact")]
+    known = None if has["MTCL_r"] and has["PTCL_r"] else (
+        "without a compressive load the joint is held only by its ligaments; the medial and posterior "
+        "talocalcaneal ligaments and the capsule are missing or unsourced (AT-17)")
+    check(abs(i1[0] - 16.8) <= 2 * 2.6, f"intact inversion-eversion range within 2 SD of Weindel ({i1[0]:.1f} vs "
+          f"16.8 +/- 2.6 deg, both groups)", known_reason=known)
+    check(abs(r1[0] - 15.7) <= 2 * 4.4, f"intact rotation range within 2 SD of Weindel ({r1[0]:.1f} vs "
+          f"15.7 +/- 4.4 deg, both groups)", known_reason=known)
+    lim = [k for k, row in res.items() if any(l for _, l in row)]
+    check(not lim, "after Weindel's cuts the subtalar joint stays contained (no slide at its safety limit"
+                   f"{': ' + ', '.join(f'{g}+{lab}' for g, lab in lim) if lim else ''})")
+    if has["LTCL_r"]:
+        d = res[("G1", "LTCL")][1][0] - res[("G1", "ITCL")][1][0]
+        check(d > 0.5, f"cutting the LTCL after the ITCL increases rotation (+{d:.1f} deg; Weindel +2.7, significant)")
 
 
 def sprain_sequence(xml: Path, ankle_deg: float, direction, max_torque: float = 40.0, max_events: int = 3):
