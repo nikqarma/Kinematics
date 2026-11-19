@@ -35,7 +35,7 @@ contact and the same ligaments. Hicks's axes then only name the coordinates; the
                    the navicular facet; head centre, radius and coverage from the KU Leuven CT bones
                    (midfoot_facets.py, all mapped by one registration of the anterior calcaneus)
   calcaneocuboid   22 contact pairs, each a small sphere on the cuboid facet facing a plate on the calcaneus
-                   at its closest point (midfoot_facets.py); joint space 0.5-3.1 mm
+                   at its closest point (midfoot_facets.py); the CT joint space (0.5-3.1 mm) is cartilage, so each pair touches at neutral
   spring ligament  its three bundles wrap over the talar head (a sling the head can load in tension)
 Contact is through explicit pairs only (frictionless, the cartilage contact of talocrural.py), so nothing
 else in the model collides differently.
@@ -293,7 +293,10 @@ def _add_contact(model: ET.Element, bodies: dict, mf: ET.Element, C: np.ndarray)
         plates.append(g.get("name"))
     spheres = []
     for i, row in enumerate(cub):
-        centre = row[:3] - CC_SPHERE_RADIUS * row[3:]          # sphere surface at the facet point
+        # The CT joint space (bone to bone) is cartilage: the sphere touches the calcaneal plate at neutral,
+        # with the unloaded clearance, instead of standing at the cuboid bone surface 0.5-3.1 mm away.
+        cal_n = cal[i, 3:]
+        centre = cal[i, :3] + (TN_CLEARANCE + CC_SPHERE_RADIUS) * cal_n
         g = ET.Element("geom", {"name": f"cc_cuboid_{i:02d}_r", "class": "midfoot_cartilage", "type": "sphere",
                                 "size": f"{CC_SPHERE_RADIUS:g}", "pos": _fmt(centre - C)})
         mf.insert(first_body(mf), g)
@@ -314,7 +317,8 @@ def _add_contact(model: ET.Element, bodies: dict, mf: ET.Element, C: np.ndarray)
         # facet's curled rim a neighbouring plate can otherwise reach behind it)
         near = ((np.linalg.norm(cal[:, :3] - cub[i, :3], axis=1) < CC_PAIR_REACH)
                 & (np.einsum("ij,j->i", cal[:, 3:], -cub[i, 3:]) > 0.5)
-                & (np.einsum("ij,ij->i", cub[i, :3] - cal[:, :3], cal[:, 3:]) > 0.0002))
+                & (np.einsum("ij,ij->i", cal[i, :3] + TN_CLEARANCE * cal[i, 3:] - cal[:, :3], cal[:, 3:])
+                   > 0.5 * TN_CLEARANCE))
         for j in np.flatnonzero(near):
             ET.SubElement(contact, "pair", geom1=sname, geom2=plates[j], **CONTACT)
 
